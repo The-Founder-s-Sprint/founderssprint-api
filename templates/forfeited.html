@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deposit Forfeited · The Founder's Sprint</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Cormorant:wght@300;700&display=swap');
+  body{margin:0;padding:0;background:#f5f0e8;font-family:'Cormorant Garamond',Georgia,serif}
+  .wrap{max-width:600px;margin:0 auto;background:#ffffff}
+  .header{background:#1a1a1a;padding:32px 40px 24px;text-align:center}
+  .header-eyebrow{color:#C9A036;font-size:10px;letter-spacing:4px;text-transform:uppercase;margin:0 0 8px;font-family:'Josefin Sans',sans-serif;font-weight:600}
+  .header-title{color:#ffffff;font-size:22px;font-weight:700;margin:0;line-height:1.2;font-family:'Josefin Sans',sans-serif;letter-spacing:0.06em;text-transform:uppercase}
+  .deco-line{display:flex;align-items:center;justify-content:center;gap:10px;margin:16px 0 0}
+  .deco-line span{display:block;height:1px;width:40px;background:#C9A036}
+  .deco-diamond{width:6px;height:6px;background:#C9A036;transform:rotate(45deg)}
+  .body{padding:36px 40px;color:#1a1a1a;font-size:15px;line-height:1.7}
+  .body p{margin:0 0 16px}
+  .highlight-box{background:#f5f0e8;border-left:3px solid #888;padding:16px 20px;margin:24px 0}
+  .footer{background:#0B1810;padding:24px 40px;text-align:center}
+  .footer p{color:rgba(255,255,255,0.35);font-size:10px;margin:4px 0;font-family:'Josefin Sans',sans-serif;letter-spacing:0.12em;text-transform:uppercase}
+  .footer a{color:#C9A036;text-decoration:none}
+  hr{border:none;border-top:1px solid #e8e2d6;margin:24px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <p class="header-eyebrow">The Founder's Sprint</p>
+    <h1 class="header-title">Your deposit has been forfeited.</h1>
+    <div class="deco-line"><span></span><div class="deco-diamond"></div><span></span></div>
+  </div>
+
+  <div class="body">
+    <p>Hi {{FIRST_NAME}},</p>
+    <p>Unfortunately, the full balance for <strong>{{COHORT_NAME}}</strong> was not received by the payment deadline, and your spot had already been transferred once to a subsequent cohort.</p>
+
+    <div class="highlight-box">
+      As per the registration terms, your deposit of <strong>{{DEPOSIT}}</strong> has been forfeited and your spot has been permanently released.
+    </div>
+
+    <p>We're sorry things didn't work out this time. If circumstances change and you'd like to join a future cohort, you're welcome to register again — a new deposit would be required.</p>
+
+    <p>If you believe this was an error, or if you'd like to discuss, please email <a href="mailto:{{ADMIN_EMAIL}}">{{ADMIN_EMAIL}}</a> within 48 hours.</p>
+
+    <hr>
+    <p>We wish you the very best with your venture.</p>
+    <p>— Teddy</p>
+  </div>
+
+  <div class="footer">
+    <p><strong style="color:#C9A036">The Founder's Sprint</strong></p>
+    <p>5 weeks · from idea to strategy</p>
+    <p style="margin-top:12px"><a href="mailto:{{ADMIN_EMAIL}}">{{ADMIN_EMAIL}}</a></p>
+    <p>© 2026 TMS Ruge. All rights reserved.</p>
+  </div>
+
+</div>
+</body>
+</html>

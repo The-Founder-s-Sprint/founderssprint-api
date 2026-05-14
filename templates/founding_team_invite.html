@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Founding Team Meeting · The Founder's Sprint</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;600;700&family=Cormorant:wght@300;400;700&display=swap');
+  body{margin:0;padding:0;background:#EDE7D9;font-family:'Josefin Sans',Helvetica,Arial,sans-serif}
+  .wrap{max-width:600px;margin:0 auto;background:#F5EED8}
+
+  .hero{position:relative;width:100%;height:280px;background:url('https://tmsruge.com/founders_pitch/images/sec-equity.jpg') center/cover no-repeat}
+  .hero-overlay{position:absolute;inset:0;background:linear-gradient(180deg,rgba(26,20,12,0.55) 0%,rgba(26,20,12,0.75) 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px}
+  .hero-eyebrow{font-family:'Josefin Sans',sans-serif;color:#C9A036;font-size:10px;letter-spacing:4px;text-transform:uppercase;font-weight:600;margin:0 0 12px}
+  .hero-title{font-family:'Cormorant',Georgia,serif;color:#ffffff;font-size:32px;font-weight:300;margin:0;line-height:1.2;text-align:center}
+  .hero-subtitle{font-family:'Josefin Sans',sans-serif;color:rgba(255,255,255,0.55);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin:14px 0 0;font-weight:300}
+  .deco-line{display:flex;align-items:center;justify-content:center;gap:10px;margin:16px 0 0}
+  .deco-line span{display:block;height:1px;width:48px;background:rgba(201,160,54,0.6)}
+  .deco-diamond{width:6px;height:6px;background:#C9A036;transform:rotate(45deg)}
+
+  .body{padding:40px;color:#3D3B35;font-size:15px;line-height:1.75;font-family:'Josefin Sans',Helvetica,Arial,sans-serif;font-weight:300}
+  .body p{margin:0 0 16px}
+  .body a{color:#9A7B2E;text-decoration:none;font-weight:400}
+  .body strong{font-weight:600;color:#2C2417}
+
+  .table-clean{width:100%;border-collapse:collapse;margin:24px 0;font-size:14px}
+  .table-clean th{background:#2C2417;color:#C9A036;text-align:left;padding:12px 16px;font-family:'Josefin Sans',sans-serif;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase}
+  .table-clean td{padding:12px 16px;border-bottom:1px solid rgba(44,36,23,0.1);color:#3D3B35;vertical-align:top;font-weight:300}
+  .table-clean tr:nth-child(odd) td{background:rgba(44,36,23,0.03)}
+  .table-clean tr:last-child td{border-bottom:none}
+
+  .agenda-box{background:#ffffff;border:1px solid rgba(44,36,23,0.1);padding:28px;margin:28px 0}
+  .agenda-title{font-family:'Josefin Sans',sans-serif;color:#9A7B2E;font-size:10px;letter-spacing:3px;text-transform:uppercase;margin:0 0 20px;font-weight:700}
+  .agenda-item{display:flex;align-items:flex-start;gap:16px;margin-bottom:16px}
+  .agenda-item:last-child{margin-bottom:0}
+  .agenda-num{background:#2C2417;color:#C9A036;font-family:'Josefin Sans',sans-serif;font-weight:700;font-size:11px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+  .agenda-text{color:#5C5647;font-size:14px;line-height:1.65;font-weight:300}
+  .agenda-text strong{color:#2C2417;font-weight:600}
+
+  .note-box{background:rgba(201,160,54,0.08);border-left:3px solid #C9A036;padding:16px 20px;margin:24px 0;font-size:14px;color:#5C5647;font-weight:300}
+  .note-box strong{color:#2C2417;font-weight:600}
+
+  .cta-wrap{text-align:center;margin:32px 0}
+  .cta-btn{display:inline-block;background:#2C2417;color:#C9A036;font-family:'Josefin Sans',sans-serif;font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;padding:15px 36px;text-decoration:none}
+  .cta-outline{display:inline-block;border:1px solid rgba(44,36,23,0.25);color:#2C2417;font-family:'Josefin Sans',sans-serif;font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;padding:12px 28px;text-decoration:none;margin-top:12px}
+
+  hr{border:none;border-top:1px solid rgba(44,36,23,0.12);margin:28px 0}
+
+  .footer{background:#2C2417;padding:28px 40px;text-align:center}
+  .footer p{font-family:'Josefin Sans',sans-serif;color:rgba(245,238,216,0.4);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;margin:4px 0;font-weight:300}
+  .footer a{color:#C9A036;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Hero with sepia-toned image -->
+  <div class="hero">
+    <div class="hero-overlay">
+      <p class="hero-eyebrow">The Founder's Sprint</p>
+      <h1 class="hero-title">Founding Team<br>Meeting</h1>
+      <p class="hero-subtitle">Thursday, 8 May 2026</p>
+      <div class="deco-line"><span></span><div class="deco-diamond"></div><span></span></div>
+    </div>
+  </div>
+
+  <div class="body">
+    <p>Hi {{FIRST_NAME}},</p>
+
+    <p>You're receiving this because you've been identified as a founding member of <strong style="color:#9A7B2E">The Founder's Sprint</strong> coaching platform. I'm inviting you to our first official founding team meeting to present the vision, the platform architecture, and your role in shaping what I believe will become Africa's most impactful entrepreneurship coaching ecosystem.</p>
+
+    <table class="table-clean">
+      <tr><th colspan="2">Meeting Details</th></tr>
+      <tr><td style="width:35%">Date</td><td><strong>Thursday, 8 May 2026</strong></td></tr>
+      <tr><td>Time</td><td><strong style="color:#9A7B2E">6:00 PM EAT</strong> (East Africa Time)</td></tr>
+      <tr><td>Duration</td><td>~90 minutes</td></tr>
+      <tr><td>Location</td><td><strong>Zoom</strong> — link below</td></tr>
+    </table>
+
+    <div class="cta-wrap">
+      <a href="{{ZOOM_LINK}}" class="cta-btn" target="_blank">Join Zoom Meeting</a>
+    </div>
+
+    <div class="agenda-box">
+      <p class="agenda-title">Meeting Agenda</p>
+
+      <div class="agenda-item">
+        <div class="agenda-num">1</div>
+        <div class="agenda-text">
+          <strong>The Vision</strong><br>
+          Where The Founder's Sprint is headed — from solo programme to continental coaching platform
+        </div>
+      </div>
+
+      <div class="agenda-item">
+        <div class="agenda-num">2</div>
+        <div class="agenda-text">
+          <strong>Platform Architecture</strong><br>
+          Technical build, curriculum delivery, and how the coaching experience scales
+        </div>
+      </div>
+
+      <div class="agenda-item">
+        <div class="agenda-num">3</div>
+        <div class="agenda-text">
+          <strong>The Founding Team</strong><br>
+          Your expertise, your niche, and how the 5-coach model works
+        </div>
+      </div>
+
+      <div class="agenda-item">
+        <div class="agenda-num">4</div>
+        <div class="agenda-text">
+          <strong>Revenue Model &amp; Equity</strong><br>
+          Shareholding proposal, revenue splits, and the path to profitability
+        </div>
+      </div>
+
+      <div class="agenda-item">
+        <div class="agenda-num">5</div>
+        <div class="agenda-text">
+          <strong>Next Steps &amp; Timeline</strong><br>
+          What happens after this meeting — commitments, onboarding, and launch
+        </div>
+      </div>
+    </div>
+
+    <div class="note-box">
+      <strong>Come prepared.</strong> I've put together a detailed presentation deck that covers everything we'll discuss. Please review it before the meeting so we can use our time for discussion rather than introductions to the material.
+    </div>
+
+    <div class="cta-wrap">
+      <a href="https://tmsruge.com/founders_pitch/" class="cta-btn" target="_blank">View Presentation Deck</a>
+    </div>
+
+    <hr>
+
+    <p>This is the beginning of something significant. The five of us bring a rare combination of expertise that I believe can reshape how African entrepreneurs access world-class coaching. I'm looking forward to making the case on Thursday.</p>
+
+    <p>A calendar invite is attached to this email. If you have any questions before the meeting, reply here or reach me on WhatsApp.</p>
+
+    <p style="margin-top:24px">— Teddy</p>
+  </div>
+
+  <div class="footer">
+    <p><strong style="color:#C9A036">The Founder's Sprint</strong></p>
+    <p>from idea to strategy &middot; Africa-wide</p>
+    <p style="margin-top:10px"><a href="mailto:hello@founderssprint.co">hello@founderssprint.co</a></p>
+    <p>&copy; 2026 The Founder's Sprint. All rights reserved.</p>
+  </div>
+
+</div>
+</body>
+</html>

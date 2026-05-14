@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>New Coach Application · Admin</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap');
+  body{margin:0;padding:0;background:#0B1810;font-family:'Cormorant Garamond',Georgia,serif}
+  .wrap{max-width:600px;margin:0 auto;background:#142B1E}
+  .header{background:#0B1810;padding:36px 40px 28px;text-align:center;border-bottom:1px solid rgba(201,160,54,0.25)}
+  .header-eyebrow{font-family:'Josefin Sans',sans-serif;color:#C9A036;font-size:10px;letter-spacing:4px;text-transform:uppercase;font-weight:600;margin:0 0 10px}
+  .header-title{font-family:'Josefin Sans',sans-serif;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;margin:0;line-height:1.3}
+  .deco-line{display:flex;align-items:center;justify-content:center;gap:10px;margin:18px 0 0}
+  .deco-line span{display:block;height:1px;width:48px;background:#C9A036}
+  .deco-diamond{width:6px;height:6px;background:#C9A036;transform:rotate(45deg)}
+  .body{padding:40px;color:#e8e2d6;font-size:16px;line-height:1.75}
+  .body p{margin:0 0 16px}
+  .table-clean{width:100%;border-collapse:collapse;margin:24px 0;font-size:15px}
+  .table-clean th{background:#0B1810;color:#C9A036;text-align:left;padding:10px 16px;font-family:'Josefin Sans',sans-serif;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border:1px solid rgba(201,160,54,0.2)}
+  .table-clean td{padding:10px 16px;border-bottom:1px solid rgba(201,160,54,0.15);color:#e8e2d6;vertical-align:top;font-size:14px}
+  .table-clean tr:last-child td{border-bottom:none}
+  .cta-btn{display:inline-block;background:#C9A036;color:#0B1810;font-family:'Josefin Sans',sans-serif;font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;padding:15px 36px;text-decoration:none;margin-top:8px}
+  .footer{background:#0B1810;padding:28px 40px;text-align:center;border-top:1px solid rgba(201,160,54,0.2)}
+  .footer p{font-family:'Josefin Sans',sans-serif;color:rgba(255,255,255,0.35);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;margin:4px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <p class="header-eyebrow">Admin Alert</p>
+    <h1 class="header-title">New Coach Application</h1>
+    <div class="deco-line"><span></span><div class="deco-diamond"></div><span></span></div>
+  </div>
+
+  <div class="body">
+    <p>A new coach application has been submitted and is awaiting your review.</p>
+
+    <table class="table-clean">
+      <tr><th colspan="2">Applicant Details</th></tr>
+      <tr><td style="width:140px;color:#C9A036;font-weight:600">Name</td><td>{{FULL_NAME}}</td></tr>
+      <tr><td style="color:#C9A036;font-weight:600">Email</td><td><a href="mailto:{{EMAIL}}" style="color:#C9A036">{{EMAIL}}</a></td></tr>
+      <tr><td style="color:#C9A036;font-weight:600">Phone</td><td>{{PHONE}}</td></tr>
+      <tr><td style="color:#C9A036;font-weight:600">Discipline</td><td>{{L1_LABEL}}</td></tr>
+      <tr><td style="color:#C9A036;font-weight:600">Sub-categories</td><td>{{L2_LIST}}</td></tr>
+      <tr><td style="color:#C9A036;font-weight:600">Headline</td><td>{{HEADLINE}}</td></tr>
+      <tr><td style="color:#C9A036;font-weight:600">Current role</td><td>{{CURRENT_ROLE}}</td></tr>
+      <tr><td style="color:#C9A036;font-weight:600">Session types</td><td>{{SESSION_TYPES}}</td></tr>
+      <tr><td style="color:#C9A036;font-weight:600">Submitted</td><td>{{SUBMITTED_AT}}</td></tr>
+    </table>
+
+    <p style="font-size:14px; color:rgba(255,255,255,0.5);">
+      <strong style="color:#ffffff;">Experience excerpt:</strong><br>
+      {{EXPERIENCE_EXCERPT}}
+    </p>
+
+    <div style="text-align:center; margin-top:28px;">
+      <a href="{{DASHBOARD_URL}}" class="cta-btn">Review in Dashboard</a>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>The Founder's Sprint &middot; Admin Notification</p>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>96 Hours · Balance Due · The Founder's Sprint</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Cormorant:wght@300;700&display=swap');
+  body{margin:0;padding:0;background:#f5f0e8;font-family:'Cormorant Garamond',Georgia,serif}
+  .wrap{max-width:600px;margin:0 auto;background:#ffffff}
+  .header{background:#0B1810;padding:32px 40px 24px;text-align:center}
+  .header-eyebrow{color:#C9A036;font-size:10px;letter-spacing:4px;text-transform:uppercase;margin:0 0 8px;font-family:'Josefin Sans',sans-serif;font-weight:600}
+  .header-title{color:#ffffff;font-size:22px;font-weight:700;margin:0;line-height:1.2;font-family:'Josefin Sans',sans-serif;letter-spacing:0.06em;text-transform:uppercase}
+  .header-sub{color:#8a9a88;font-size:14px;margin:10px 0 0}
+  .deco-line{display:flex;align-items:center;justify-content:center;gap:10px;margin:16px 0 0}
+  .deco-line span{display:block;height:1px;width:40px;background:#C9A036}
+  .deco-diamond{width:6px;height:6px;background:#C9A036;transform:rotate(45deg)}
+  .body{padding:36px 40px;color:#1a1a1a;font-size:15px;line-height:1.7}
+  .body p{margin:0 0 16px}
+  .alert-box{background:#fff8e6;border:1px solid #C9A036;padding:20px 24px;margin:24px 0;text-align:center}
+  .alert-box .big{font-size:36px;font-weight:700;color:#C9A036;display:block;line-height:1;font-family:'Josefin Sans',sans-serif}
+  .alert-box .label{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#666;margin-top:4px;display:block;font-family:'Josefin Sans',sans-serif}
+  .highlight-box{background:#f5f0e8;border-left:3px solid #C9A036;padding:16px 20px;margin:24px 0}
+  .footer{background:#0B1810;padding:24px 40px;text-align:center}
+  .footer p{color:rgba(255,255,255,0.35);font-size:10px;margin:4px 0;font-family:'Josefin Sans',sans-serif;letter-spacing:0.12em;text-transform:uppercase}
+  .footer a{color:#C9A036;text-decoration:none}
+  .gold{color:#C9A036;font-weight:700}
+  hr{border:none;border-top:1px solid #e8e2d6;margin:24px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <p class="header-eyebrow">Action Required · {{COHORT_NAME}}</p>
+    <h1 class="header-title">96 hours left.</h1>
+    <p class="header-sub">Your balance is due before {{START_DATE}}.</p>
+    <div class="deco-line"><span></span><div class="deco-diamond"></div><span></span></div>
+  </div>
+
+  <div class="body">
+    <p>Hi {{FIRST_NAME}},</p>
+    <p>This is your final payment reminder. <strong>{{COHORT_NAME}}</strong> begins on <strong>{{START_DATE}}</strong>, and your balance must be received within the next 96 hours to hold your spot.</p>
+
+    <div class="alert-box">
+      <span class="big"><span class="gold">{{BALANCE}}</span></span>
+      <span class="label">Balance outstanding · due before {{START_DATE}}</span>
+    </div>
+
+    <div style="background:#0B1810;border-radius:4px;padding:22px 26px;margin:24px 0">
+      <p style="color:#C9A036;font-size:11px;letter-spacing:2px;text-transform:uppercase;margin:0 0 12px;font-weight:700">Pay now via Airtel Money</p>
+      <p style="color:#e8e2d6;font-size:14px;line-height:1.7;margin:0">
+        Dial <strong style="color:#fff">*185#</strong> or open the Airtel Money app<br>
+        Send <strong style="color:#fff">{{BALANCE}}</strong> to <strong style="color:#C9A036">{{AIRTEL_NUMBER}}</strong> · Name: TMS Ruge<br>
+        Reference: <em style="color:#C9A036">FS-{{COHORT_NAME}}</em><br><br>
+        <strong style="color:#fff">Immediately forward the confirmation SMS to</strong><br>
+        <a href="mailto:{{ADMIN_EMAIL}}" style="color:#C9A036">{{ADMIN_EMAIL}}</a>
+      </p>
+    </div>
+
+    <p>Founders who have not paid their full balance 48 hours before Day 1 will be automatically moved to the next cohort. This will be the <strong>only</strong> automatic move — a second non-payment will result in the deposit being forfeited.</p>
+    <p>If you have already sent payment, simply forward your SMS and ignore this message.</p>
+
+    <hr>
+    <p>— Teddy &nbsp;|&nbsp; <a href="mailto:{{ADMIN_EMAIL}}">{{ADMIN_EMAIL}}</a></p>
+  </div>
+
+  <div class="footer">
+    <p><strong style="color:#C9A036">The Founder's Sprint</strong></p>
+    <p>5 weeks · from idea to strategy</p>
+    <p style="margin-top:12px"><a href="mailto:{{ADMIN_EMAIL}}">{{ADMIN_EMAIL}}</a></p>
+    <p>© 2026 TMS Ruge. All rights reserved.</p>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Welcome to the Coaching Network · The Founder's Sprint</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap');
+  body{margin:0;padding:0;background:#0B1810;font-family:'Cormorant Garamond',Georgia,serif}
+  .wrap{max-width:600px;margin:0 auto;background:#142B1E}
+  .header{background:#0B1810;padding:36px 40px 28px;text-align:center;border-bottom:1px solid rgba(201,160,54,0.25)}
+  .header-eyebrow{font-family:'Josefin Sans',sans-serif;color:#C9A036;font-size:10px;letter-spacing:4px;text-transform:uppercase;font-weight:600;margin:0 0 10px}
+  .header-title{font-family:'Josefin Sans',sans-serif;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;margin:0;line-height:1.3}
+  .deco-line{display:flex;align-items:center;justify-content:center;gap:10px;margin:18px 0 0}
+  .deco-line span{display:block;height:1px;width:48px;background:#C9A036}
+  .deco-diamond{width:6px;height:6px;background:#C9A036;transform:rotate(45deg)}
+  .body{padding:40px;color:#e8e2d6;font-size:16px;line-height:1.75}
+  .body p{margin:0 0 16px}
+  .steps-box{background:#0B1810;border:1px solid rgba(201,160,54,0.25);padding:28px;margin:28px 0}
+  .steps-title{font-family:'Josefin Sans',sans-serif;color:#C9A036;font-size:10px;letter-spacing:3px;text-transform:uppercase;margin:0 0 20px;font-weight:700}
+  .step{display:flex;align-items:flex-start;gap:16px;margin-bottom:16px}
+  .step:last-child{margin-bottom:0}
+  .step-num{background:#C9A036;color:#0B1810;font-family:'Josefin Sans',sans-serif;font-weight:700;font-size:11px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+  .step-text{color:rgba(255,255,255,0.65);font-size:15px;line-height:1.65}
+  .step-text strong{color:#ffffff}
+  .step-text em{color:#C9A036;font-style:normal}
+  .highlight-box{background:rgba(201,160,54,0.06);border-left:3px solid #C9A036;padding:16px 20px;margin:24px 0}
+  .highlight-box strong{color:#ffffff}
+  hr{border:none;border-top:1px solid rgba(201,160,54,0.2);margin:28px 0}
+  .footer{background:#0B1810;padding:28px 40px;text-align:center;border-top:1px solid rgba(201,160,54,0.2)}
+  .footer p{font-family:'Josefin Sans',sans-serif;color:rgba(255,255,255,0.35);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;margin:4px 0}
+  .footer a{color:#C9A036;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <p class="header-eyebrow">Coach Network</p>
+    <h1 class="header-title">Welcome Aboard</h1>
+    <div class="deco-line"><span></span><div class="deco-diamond"></div><span></span></div>
+  </div>
+
+  <div class="body">
+    <p>{{FIRST_NAME}},</p>
+
+    <p>Your application to The Founder's Sprint coaching network has been <strong style="color:#C9A036;">approved</strong>. Welcome to the team.</p>
+
+    <div class="highlight-box">
+      <strong>Your coaching position</strong><br>
+      <span style="color:rgba(255,255,255,0.6); font-size:15px;">
+        Discipline: <strong>{{L1_LABEL}}</strong><br>
+        Coaching day: <strong>{{ASSIGNED_DAY}}</strong>
+      </span>
+    </div>
+
+    <div class="steps-box">
+      <p class="steps-title">Next steps</p>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-text"><strong>Coaching agreement</strong> — You'll receive a separate email with the coaching agreement for digital signature. Please review and sign within 5 business days.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-text"><strong>Platform onboarding</strong> — Once signed, you'll receive dashboard access where you can manage your schedule, content, and earnings.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-text"><strong>Content setup</strong> — We'll work with you to prepare your course materials using our branded template system. If you have existing materials, we'll convert them.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-text"><strong>Go live</strong> — Your profile goes live on the platform and founders can start booking sessions with you.</div>
+      </div>
+    </div>
+
+    <p>We're building something important for the East African startup ecosystem, and your expertise makes it stronger. Looking forward to working with you.</p>
+
+    <p style="color:rgba(255,255,255,0.5); font-size:14px;">Questions? Reply to this email or reach us at <a href="mailto:hello@founderssprint.co" style="color:#C9A036; text-decoration:none;">hello@founderssprint.co</a>.</p>
+  </div>
+
+  <div class="footer">
+    <p>The Founder's Sprint</p>
+    <p>Kampala &middot; Nairobi &middot; Kigali</p>
+    <p>&copy; 2026 The Founder's Sprint. All rights reserved.</p>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Application Update · The Founder's Sprint</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap');
+  body{margin:0;padding:0;background:#0B1810;font-family:'Cormorant Garamond',Georgia,serif}
+  .wrap{max-width:600px;margin:0 auto;background:#142B1E}
+  .header{background:#0B1810;padding:36px 40px 28px;text-align:center;border-bottom:1px solid rgba(201,160,54,0.25)}
+  .header-eyebrow{font-family:'Josefin Sans',sans-serif;color:#C9A036;font-size:10px;letter-spacing:4px;text-transform:uppercase;font-weight:600;margin:0 0 10px}
+  .header-title{font-family:'Josefin Sans',sans-serif;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;margin:0;line-height:1.3}
+  .deco-line{display:flex;align-items:center;justify-content:center;gap:10px;margin:18px 0 0}
+  .deco-line span{display:block;height:1px;width:48px;background:#C9A036}
+  .deco-diamond{width:6px;height:6px;background:#C9A036;transform:rotate(45deg)}
+  .body{padding:40px;color:#e8e2d6;font-size:16px;line-height:1.75}
+  .body p{margin:0 0 16px}
+  .highlight-box{background:rgba(201,160,54,0.06);border-left:3px solid #C9A036;padding:16px 20px;margin:24px 0}
+  .highlight-box strong{color:#ffffff}
+  hr{border:none;border-top:1px solid rgba(201,160,54,0.2);margin:28px 0}
+  .footer{background:#0B1810;padding:28px 40px;text-align:center;border-top:1px solid rgba(201,160,54,0.2)}
+  .footer p{font-family:'Josefin Sans',sans-serif;color:rgba(255,255,255,0.35);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;margin:4px 0}
+  .footer a{color:#C9A036;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <p class="header-eyebrow">Coach Network</p>
+    <h1 class="header-title">Application Update</h1>
+    <div class="deco-line"><span></span><div class="deco-diamond"></div><span></span></div>
+  </div>
+
+  <div class="body">
+    <p>{{FIRST_NAME}},</p>
+
+    <p>Thank you for your interest in joining The Founder's Sprint coaching network. After reviewing your application, we're unable to offer a coaching position at this time.</p>
+
+    {{REASON_BLOCK}}
+
+    <p>This doesn't close the door permanently. Our coaching needs evolve as we expand into new markets and disciplines. We encourage you to reapply in the future, especially if your experience or focus area changes.</p>
+
+    <hr>
+
+    <p>We appreciate the time you invested in your application and wish you the best in your work.</p>
+
+    <p style="color:rgba(255,255,255,0.5); font-size:14px;">If you have questions about this decision, reply to this email or reach us at <a href="mailto:hello@founderssprint.co" style="color:#C9A036; text-decoration:none;">hello@founderssprint.co</a>.</p>
+  </div>
+
+  <div class="footer">
+    <p>The Founder's Sprint</p>
+    <p>Kampala &middot; Nairobi &middot; Kigali</p>
+    <p>&copy; 2026 The Founder's Sprint. All rights reserved.</p>
+  </div>
+
+</div>
+</body>
+</html>
