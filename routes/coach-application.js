@@ -7,6 +7,7 @@ const {
   getCoachApplication,
   updateCoachApplication,
   createCoachFromApplication,
+  createCoachAuthAccount,
   createApprovalVote,
   getApprovalVotes,
   uploadCoachFile,
@@ -299,14 +300,28 @@ router.post('/admin/coach-applications/:id/vote', requireSecret, async (req, res
       // Create coach record
       const coach = await createCoachFromApplication(app);
 
-      // Send approval email
+      // Create Supabase auth account + seed user_roles
+      let authResult = null;
       try {
-        await sendCoachApproval(app);
+        authResult = await createCoachAuthAccount(app, coach.id);
+        console.log('[Auth] Coach auth account created for', app.email, '— user_id:', authResult.userId);
+      } catch (authErr) {
+        // Non-fatal: coach record exists, auth can be retried manually
+        console.error('[Auth] Coach auth account creation failed (non-fatal):', authErr.message);
+      }
+
+      // Send approval email (with login credentials if auth succeeded)
+      try {
+        const loginUrl = (process.env.CURRICULUM_URL || 'https://learn.founderssprint.co') + '/login?redirect=/coach/dashboard';
+        await sendCoachApproval(app, {
+          tempPassword: authResult?.tempPassword || null,
+          loginUrl,
+        });
       } catch (emailErr) {
         console.error('[Email] Coach approval email failed:', emailErr.message);
       }
 
-      return res.json({ ok: true, status: 'approved', coach_id: coach.id, approvals, rejections, required });
+      return res.json({ ok: true, status: 'approved', coach_id: coach.id, user_id: authResult?.userId || null, approvals, rejections, required });
     }
 
     // Still pending — need more votes
