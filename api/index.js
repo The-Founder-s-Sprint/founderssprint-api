@@ -18,6 +18,8 @@ const allowedOrigins = [
   'https://www.tmsruge.com',
   'https://founderssprint.co',
   'https://www.founderssprint.co',
+  'https://learn.founderssprint.co',
+  'https://api.founderssprint.co',
   'http://localhost:3000',
   'http://localhost:5500',
 ];

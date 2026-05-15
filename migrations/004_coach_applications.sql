@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS coach_applications (
     website_url     text,
 
     -- § 4  Credentials & experience
-    current_role    text,
+    "current_role"  text,
     experience      text,
     notable_clients text,
     cv_path         text,       -- Supabase Storage path in coach-documents bucket
