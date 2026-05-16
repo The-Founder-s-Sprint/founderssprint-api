@@ -5,7 +5,7 @@
 -- ── Coach presentations table ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS coach_presentations (
   id              BIGSERIAL PRIMARY KEY,
-  coach_id        UUID NOT NULL REFERENCES auth.users(id),
+  coach_id        UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   title           TEXT NOT NULL,
   taxonomy_l1     TEXT NOT NULL,                    -- e.g. "Marketing & Branding"
   session_code    TEXT,                             -- e.g. "L2-1-1" or "L3-1-1-1"
