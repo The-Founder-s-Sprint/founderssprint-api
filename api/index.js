@@ -9,6 +9,8 @@ const paymentRequestRoutes  = require('../routes/payment-request');
 const iotecWebhookRoutes    = require('../routes/iotec-webhook');
 const materialsRoutes       = require('../routes/materials');
 const coachApplicationRoutes = require('../routes/coach-application');
+const sessionRoutes           = require('../routes/sessions');
+const presentationRoutes      = require('../routes/presentations');
 
 const app = express();
 
@@ -30,7 +32,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
     cb(new Error('Not allowed by CORS'));
   },
-  methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   credentials: true,
 }));
 
@@ -50,6 +52,8 @@ app.post('/api/payment-request',  paymentRequestRoutes);
 app.post('/api/iotec/webhook',    iotecWebhookRoutes);
 app.use('/api/materials',         materialsRoutes);
 app.use('/api',                   coachApplicationRoutes);
+app.use('/api/sessions',          sessionRoutes);
+app.use('/api/presentations',     presentationRoutes);
 
 // ── Error handler ─────────────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {
