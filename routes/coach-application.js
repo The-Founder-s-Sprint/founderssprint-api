@@ -66,6 +66,59 @@ async function requireSecret(req, res, next) {
   return res.status(403).json({ error: 'Forbidden' });
 }
 
+// ── Single-file upload for individual file fields ─────────────────────────
+// Vercel Hobby plan has a 4.5 MB body limit. The full form with 3 files can
+// exceed that. This endpoint lets the form upload files one at a time, get
+// back a storage path, and then submit the text-only form with paths.
+const singleUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 4 * 1024 * 1024 }, // 4 MB — safely under Vercel limit
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
+    if (allowed.includes(file.mimetype)) return cb(null, true);
+    cb(new Error('Invalid file type: ' + file.mimetype));
+  },
+}).single('file');
+
+router.post('/coach-upload', (req, res) => {
+  singleUpload(req, res, async (multerErr) => {
+    if (multerErr) {
+      return res.status(400).json({ error: multerErr.message });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    const field = req.body.field; // 'profile_photo', 'cv_file', or 'id_document'
+    if (!field || !['profile_photo', 'cv_file', 'id_document'].includes(field)) {
+      return res.status(400).json({ error: 'Invalid field name' });
+    }
+
+    const tempId = req.body.tempId || Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const ext = req.file.originalname.split('.').pop();
+
+    try {
+      let bucket, storagePath;
+      if (field === 'profile_photo') {
+        bucket = 'coach-profiles';
+        storagePath = `${tempId}/photo.${ext}`;
+      } else if (field === 'cv_file') {
+        bucket = 'coach-documents';
+        storagePath = `${tempId}/cv.pdf`;
+      } else {
+        bucket = 'coach-documents';
+        storagePath = `${tempId}/id-document.${ext}`;
+      }
+
+      const path = await uploadCoachFile(bucket, storagePath, req.file.buffer, req.file.mimetype);
+      res.json({ ok: true, path, tempId });
+    } catch (err) {
+      console.error('[Coach Upload] Error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+});
+
 // ── Helper: parse array fields from form data ──────────────────────────────
 function parseArrayField(val) {
   if (!val) return [];
@@ -74,6 +127,9 @@ function parseArrayField(val) {
 }
 
 // ── POST /api/coach-application — submit new application ───────────────────
+// Accepts EITHER:
+//   (a) multipart with files inline (original flow — works when total < 4.5 MB)
+//   (b) multipart text-only with pre-uploaded paths from /api/coach-upload
 router.post('/coach-application', fileFields, async (req, res) => {
   try {
     const b = req.body;
@@ -81,11 +137,12 @@ router.post('/coach-application', fileFields, async (req, res) => {
     // Generate a temp ID for file paths
     const tempId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
-    // Upload files to Supabase Storage
-    let profilePhotoPath = null;
-    let cvPath = null;
-    let idDocPath = null;
+    // Upload files to Supabase Storage (inline uploads — small files)
+    let profilePhotoPath = b.profile_photo_path || null;
+    let cvPath           = b.cv_path            || null;
+    let idDocPath        = b.id_document_path   || null;
 
+    // If files were sent inline (original flow), upload them now
     if (req.files?.profile_photo?.[0]) {
       const f = req.files.profile_photo[0];
       const ext = f.originalname.split('.').pop();
@@ -109,53 +166,78 @@ router.post('/coach-application', fileFields, async (req, res) => {
       );
     }
 
+    // ── Field name mapping (form → DB) ──────────────────────────────────────
+    // The form uses slightly different field names than the DB columns.
+    // Accept both versions so old and new forms both work.
+    const countryCode  = b.country_code  || b.phone_country || '+256';
+    const taxonomyL1   = b.taxonomy_l1   || b.l1_discipline;
+    const experience   = b.experience    || b.coaching_experience;
+    const tin          = b.tin           || (b.tin_number ? `${b.tin_number}${b.tin_country ? ' (' + b.tin_country + ')' : ''}` : null);
+
     // Build application record
     const application = await createCoachApplication({
       first_name:     b.first_name,
       last_name:      b.last_name,
       email:          b.email,
-      country_code:   b.country_code || '+256',
+      country_code:   countryCode,
       phone:          b.phone,
 
-      taxonomy_l1:    b.taxonomy_l1,
+      taxonomy_l1:    taxonomyL1,
       taxonomy_l2:    parseArrayField(b.taxonomy_l2),
       taxonomy_l3:    parseArrayField(b.taxonomy_l3),
       assigned_day:   b.assigned_day,
 
       profile_photo_path: profilePhotoPath,
+      display_name:   b.display_name    || null,
       headline:       b.headline,
       bio:            b.bio,
       geographies:    b.geographies,
+      nationality:    b.nationality     || null,
+      location:       b.location        || null,
+      timezone:       b.timezone        || null,
+      languages:      b.languages       || null,
       linkedin_url:   b.linkedin_url,
-      twitter_url:    b.twitter_url,
-      instagram_url:  b.instagram_url,
+      twitter_url:    b.twitter_url     || null,
+      instagram_url:  b.instagram_url   || null,
       website_url:    b.website_url,
 
       current_role:   b.current_role,
-      experience:     b.experience,
+      experience:     experience,
       notable_clients: b.notable_clients,
       cv_path:        cvPath,
+      sectors:        parseArrayField(b.sectors),
 
       session_types:  parseArrayField(b.session_types),
       time_slots:     parseArrayField(b.time_slots),
       has_existing_materials: b.has_existing_materials,
       coaching_philosophy:    b.coaching_philosophy,
 
-      mobile_money_provider: b.mobile_money_provider,
-      mobile_money_number:   b.mobile_money_number,
-      bank_name:      b.bank_name,
-      bank_branch:    b.bank_branch,
-      account_name:   b.account_name,
-      account_number: b.account_number,
-      swift_code:     b.swift_code,
+      mobile_money_provider: b.mobile_money_provider || null,
+      mobile_money_number:   b.mobile_money_number   || null,
+      bank_name:      b.bank_name       || null,
+      bank_branch:    b.bank_branch     || null,
+      account_name:   b.account_name    || null,
+      account_number: b.account_number  || null,
+      swift_code:     b.swift_code      || null,
       tax_status:     b.tax_status,
-      company_name:   b.company_name,
+      company_name:   b.company_name    || null,
 
       id_type:        b.id_type,
+      id_number:      b.id_number       || null,
       id_document_path: idDocPath,
-      tin:            b.tin,
+      tin:            tin,
+      tin_number:     b.tin_number      || null,
+      tin_country:    b.tin_country     || null,
 
       agree_terms:    parseArrayField(b.agree_terms),
+
+      // Founder addendum (founding team only — fields are blank for regular applicants)
+      equity_pct:       b.equity_pct       || null,
+      vesting_schedule: b.vesting_schedule || null,
+      founder_role:     b.founder_role     || null,
+      founder_day:      b.founder_day      || null,
+      founder_tier:     b.founder_tier     || null,
+      founder_agree:    parseArrayField(b.founder_agree),
     });
 
     // Send confirmation email to applicant
