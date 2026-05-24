@@ -1,7 +1,7 @@
 const express = require('express');
 const router  = express.Router();
 const {
-  TRACKS, getCohort, getOpenCohorts,
+  TRACKS, getTrackPricing, getCohort, getOpenCohorts,
   createRegistration, markDepositPaid, markFullyPaid,
 } = require('../lib/db');
 const { sendConfirmation, sendNewRegistrationAdmin } = require('../lib/emailer');
@@ -23,7 +23,8 @@ router.post('/register', async (req, res) => {
   if (!cohortId || !track || !firstName || !lastName || !email) {
     return res.status(400).json({ error: 'Missing required fields.' });
   }
-  if (!TRACKS[track]) {
+  const tracks = await getTrackPricing();
+  if (!tracks[track]) {
     return res.status(400).json({ error: 'Invalid track.' });
   }
 
@@ -39,14 +40,14 @@ router.post('/register', async (req, res) => {
   }
 
   // Check capacity for this track
-  const takenKey = track === 'group' ? 'group_taken'
-                 : track === 'oneOnOne' ? 'one_on_one_taken' : 'vip_taken';
-  const maxKey   = track === 'group' ? 'group_max'
-                 : track === 'oneOnOne' ? 'one_on_one_max' : 'vip_max';
+  const TAKEN_MAP = { single:'single_taken', pick3:'pick3_taken', cohort:'cohort_taken', vip1on1:'vip1on1_taken', group:'group_taken', oneOnOne:'one_on_one_taken', vip:'vip_taken' };
+  const MAX_MAP   = { single:'single_max',   pick3:'pick3_max',   cohort:'cohort_max',   vip1on1:'vip1on1_max',   group:'group_max',   oneOnOne:'one_on_one_max',   vip:'vip_max' };
+  const takenKey = TAKEN_MAP[track] || 'single_taken';
+  const maxKey   = MAX_MAP[track]   || 'single_max';
 
   if (cohort[takenKey] >= cohort[maxKey]) {
     return res.status(409).json({
-      error: `${TRACKS[track].label} track is full for this cohort.`,
+      error: `${tracks[track].label} track is full for this cohort.`,
     });
   }
 
@@ -82,7 +83,7 @@ router.post('/register', async (req, res) => {
     registrationId: reg.id,
     cohortName:     cohort.name,
     cohortDates:    cohort.dates || `${cohort.start_date} – ${cohort.end_date}`,
-    track:          TRACKS[track].label,
+    track:          tracks[track].label,
     fullFee:        reg.full_fee,
     depositAmount:  reg.deposit_amount,
     balanceAmount:  reg.balance_amount,
@@ -103,15 +104,35 @@ router.get('/cohorts', async (req, res) => {
       end_date:   c.end_date,
       status:     c.status,
       spots: {
-        group:    { taken: c.group_taken,     cap: c.group_max    },
-        oneOnOne: { taken: c.one_on_one_taken, cap: c.one_on_one_max },
-        vip:      { taken: c.vip_taken,        cap: c.vip_max      },
+        single:  { taken: c.single_taken  || 0, cap: c.single_max  || 50 },
+        pick3:   { taken: c.pick3_taken   || 0, cap: c.pick3_max   || 30 },
+        cohort:  { taken: c.cohort_taken  || 0, cap: c.cohort_max  || 20 },
+        vip1on1: { taken: c.vip1on1_taken || 0, cap: c.vip1on1_max || 5  },
       },
     }));
     res.json(result);
   } catch (err) {
     console.error('[Cohorts] Error:', err.message);
     res.status(500).json({ error: 'Failed to load cohorts.' });
+  }
+});
+
+// ── GET /api/pricing — public track prices for registration forms ─────────────
+router.get('/pricing', async (req, res) => {
+  try {
+    const tracks = await getTrackPricing();
+    const result = Object.entries(tracks).map(([key, t]) => ({
+      track:     key,
+      label:     t.label,
+      fullFee:   t.fullFee,
+      depositPct: t.depositPct,
+      deposit:   Math.round(t.fullFee * t.depositPct / 100),
+      balance:   t.fullFee - Math.round(t.fullFee * t.depositPct / 100),
+    }));
+    res.json(result);
+  } catch (err) {
+    console.error('[Pricing] Error:', err.message);
+    res.status(500).json({ error: 'Failed to load pricing.' });
   }
 });
 
