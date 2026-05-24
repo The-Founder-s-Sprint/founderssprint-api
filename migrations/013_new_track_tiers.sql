@@ -28,3 +28,7 @@ ALTER TABLE cohorts ADD COLUMN IF NOT EXISTS cohort_taken INTEGER NOT NULL DEFAU
 ALTER TABLE cohorts ADD COLUMN IF NOT EXISTS cohort_max INTEGER NOT NULL DEFAULT 20;
 ALTER TABLE cohorts ADD COLUMN IF NOT EXISTS vip1on1_taken INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE cohorts ADD COLUMN IF NOT EXISTS vip1on1_max INTEGER NOT NULL DEFAULT 5;
+
+-- Per-coach session fee (overrides track_pricing.single for individual sessions)
+ALTER TABLE coaches ADD COLUMN IF NOT EXISTS session_fee INTEGER NOT NULL DEFAULT 500000;
+COMMENT ON COLUMN coaches.session_fee IS 'Individual 1-on-1 session fee in UGX. Platform minimum 500000. Increases based on ratings and experience.';
