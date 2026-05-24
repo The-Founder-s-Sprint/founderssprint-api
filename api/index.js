@@ -1,5 +1,7 @@
-const express = require('express');
-const cors    = require('cors');
+const express    = require('express');
+const cors       = require('cors');
+const helmet     = require('helmet');
+const rateLimit  = require('express-rate-limit');
 
 const registerRoutes        = require('../routes/register');
 const adminRoutes           = require('../routes/admin');
@@ -38,12 +40,51 @@ app.use(cors({
 
 app.use(express.json());
 
+// ── Security headers ─────────────────────────────────────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: false,   // revisit when dashboard moves to React
+  crossOriginEmbedderPolicy: false,
+}));
+
+// ── Rate limiting ────────────────────────────────────────────────────────────
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,           // 1 minute
+  max: 100,                       // 100 requests per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+app.use(generalLimiter);
+
+// Stricter limits on public-facing endpoints
+const strictLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+
+const paymentLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many payment requests, please try again later.' },
+});
+
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) =>
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 );
 
-// ── Routes ────────────────────────────────────────────────────────────────────
+// ── Routes (strict rate limits on public endpoints) ──────────────────────────
+app.use('/api/register',          strictLimiter);
+app.use('/api/coach-application', strictLimiter);
+app.use('/api/coach-upload',      strictLimiter);
+app.use('/api/payment-request',   paymentLimiter);
+app.use('/api/confirm-payment',   paymentLimiter);
+
 app.use('/api',                   registerRoutes);
 app.use('/api/admin',             adminRoutes);
 app.use('/api/cron',              cronRoutes);

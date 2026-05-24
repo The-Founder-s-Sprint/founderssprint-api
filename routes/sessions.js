@@ -3,17 +3,26 @@ const router  = express.Router();
 const { supabase } = require('../lib/db');
 const { createMeetSession, cancelMeetSession } = require('../lib/google-calendar');
 
-// ── Auth middleware — same pattern as admin routes ────────────────────────────
-function requireSecret(req, res, next) {
-  const secret = req.headers['x-admin-secret'] || req.query.secret;
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
-    return res.status(403).json({ error: 'Forbidden' });
+// ── Auth middleware — accepts admin secret OR Bearer token ────────────────────
+async function requireAuth(req, res, next) {
+  const secret = req.headers['x-admin-secret'];
+  if (secret && secret === process.env.ADMIN_SECRET) return next();
+
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer ')) {
+    const token = auth.slice(7);
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (user && !error) { req.user = user; return next(); }
+    } catch (err) {
+      console.error('[Sessions] Auth validation error:', err.message);
+    }
   }
-  next();
+  return res.status(403).json({ error: 'Forbidden' });
 }
 
 // ── POST /api/sessions/schedule — create a session with Google Meet ──────────
-router.post('/schedule', requireSecret, async (req, res) => {
+router.post('/schedule', requireAuth, async (req, res) => {
   try {
     const {
       coach_id,       // UUID from coaches table
@@ -128,7 +137,7 @@ router.post('/schedule', requireSecret, async (req, res) => {
 });
 
 // ── GET /api/sessions — list sessions (with optional filters) ────────────────
-router.get('/', requireSecret, async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
     const { coach_id, status, from, to, limit = 50 } = req.query;
 
@@ -153,7 +162,7 @@ router.get('/', requireSecret, async (req, res) => {
 });
 
 // ── PATCH /api/sessions/:id — update session status ──────────────────────────
-router.patch('/:id', requireSecret, async (req, res) => {
+router.patch('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { status, notes } = req.body;

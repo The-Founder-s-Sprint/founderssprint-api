@@ -42,7 +42,7 @@ const fileFields = upload.fields([
 // ── Auth middleware (admin routes) ──────────────────────────────────────────
 // Accept either x-admin-secret OR a valid Supabase JWT (from the dashboard)
 async function requireSecret(req, res, next) {
-  const secret = req.headers['x-admin-secret'] || req.query.secret;
+  const secret = req.headers['x-admin-secret'];
   if (secret && secret === process.env.ADMIN_SECRET) {
     req.reviewerEmail = process.env.ADMIN_EMAIL || 'hello@founderssprint.co';
     req.reviewerName  = 'Teddy Ruge';

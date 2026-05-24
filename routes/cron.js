@@ -31,7 +31,7 @@ const supabase = createClient(
 function requireCron(req, res, next) {
   const authHeader = req.headers['authorization'] || '';
   const cronToken  = authHeader.replace('Bearer ', '');
-  const adminKey   = req.headers['x-admin-secret'] || req.query.secret || '';
+  const adminKey   = req.headers['x-admin-secret'] || '';
 
   const validCron  = process.env.CRON_SECRET && cronToken === process.env.CRON_SECRET;
   const validAdmin = process.env.ADMIN_SECRET && adminKey === process.env.ADMIN_SECRET;

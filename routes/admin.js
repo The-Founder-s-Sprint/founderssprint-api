@@ -10,7 +10,7 @@ const { sendAdminReport } = require('../lib/emailer');
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
 function requireSecret(req, res, next) {
-  const secret = req.headers['x-admin-secret'] || req.query.secret;
+  const secret = req.headers['x-admin-secret'];
   if (!secret || secret !== process.env.ADMIN_SECRET) {
     return res.status(403).json({ error: 'Forbidden' });
   }
@@ -125,14 +125,25 @@ function loadInviteTemplate(vars = {}) {
 }
 
 // Accept either x-admin-secret OR a valid Supabase JWT (from the dashboard)
-function requireAuth(req, res, next) {
-  // Check admin secret first
-  const secret = req.headers['x-admin-secret'] || req.query.secret;
+async function requireAuth(req, res, next) {
+  // Check admin secret first (header only — never query params, they leak to logs)
+  const secret = req.headers['x-admin-secret'];
   if (secret && secret === process.env.ADMIN_SECRET) return next();
 
-  // Check Supabase bearer token (dashboard sends this)
+  // Validate Supabase bearer token (dashboard sends this)
   const auth = req.headers.authorization;
-  if (auth && auth.startsWith('Bearer ') && auth.length > 20) return next();
+  if (auth && auth.startsWith('Bearer ')) {
+    const token = auth.slice(7);
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (user && !error) {
+        req.user = user;
+        return next();
+      }
+    } catch (err) {
+      console.error('[Admin] Auth validation error:', err.message);
+    }
+  }
 
   return res.status(403).json({ error: 'Forbidden' });
 }

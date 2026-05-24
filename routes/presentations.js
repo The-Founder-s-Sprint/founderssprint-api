@@ -16,17 +16,26 @@ const express = require('express');
 const router  = express.Router();
 const { supabase } = require('../lib/db');
 
-// ── Auth middleware — same pattern as admin/sessions routes ──────────────────
-function requireSecret(req, res, next) {
-  const secret = req.headers['x-admin-secret'] || req.query.secret;
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
-    return res.status(403).json({ error: 'Forbidden' });
+// ── Auth middleware — accepts admin secret OR Bearer token ────────────────────
+async function requireAuth(req, res, next) {
+  const secret = req.headers['x-admin-secret'];
+  if (secret && secret === process.env.ADMIN_SECRET) return next();
+
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer ')) {
+    const token = auth.slice(7);
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (user && !error) { req.user = user; return next(); }
+    } catch (err) {
+      console.error('[Presentations] Auth validation error:', err.message);
+    }
   }
-  next();
+  return res.status(403).json({ error: 'Forbidden' });
 }
 
 // ── GET /api/presentations — list presentations ─────────────────────────────
-router.get('/', requireSecret, async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
     const { coach_id, active_only } = req.query;
 
@@ -49,7 +58,7 @@ router.get('/', requireSecret, async (req, res) => {
 });
 
 // ── POST /api/presentations — link a presentation to a coach ────────────────
-router.post('/', requireSecret, async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const {
       coach_id,
@@ -94,7 +103,7 @@ router.post('/', requireSecret, async (req, res) => {
 });
 
 // ── PATCH /api/presentations/:id — update presentation metadata ─────────────
-router.patch('/:id', requireSecret, async (req, res) => {
+router.patch('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const allowed = ['title', 'taxonomy_l1', 'session_code', 'file_path', 'description', 'duration_minutes', 'sort_order', 'is_active'];
@@ -124,7 +133,7 @@ router.patch('/:id', requireSecret, async (req, res) => {
 });
 
 // ── DELETE /api/presentations/:id — soft-delete ─────────────────────────────
-router.delete('/:id', requireSecret, async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
 
