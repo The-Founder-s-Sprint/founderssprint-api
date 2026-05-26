@@ -13,6 +13,8 @@ const materialsRoutes       = require('../routes/materials');
 const coachApplicationRoutes = require('../routes/coach-application');
 const sessionRoutes           = require('../routes/sessions');
 const presentationRoutes      = require('../routes/presentations');
+const waitlistRoutes          = require('../routes/waitlist');
+const rsvpRoutes              = require('../routes/rsvp');
 
 const app = express();
 
@@ -80,6 +82,8 @@ app.get('/api/health', (_req, res) =>
 
 // ── Routes (strict rate limits on public endpoints) ──────────────────────────
 app.use('/api/register',          strictLimiter);
+app.use('/api/waitlist',          strictLimiter);
+app.use('/api/rsvp',             strictLimiter);
 app.use('/api/coach-application', strictLimiter);
 app.use('/api/coach-upload',      strictLimiter);
 app.use('/api/payment-request',   paymentLimiter);
@@ -95,6 +99,8 @@ app.use('/api/materials',         materialsRoutes);
 app.use('/api',                   coachApplicationRoutes);
 app.use('/api/sessions',          sessionRoutes);
 app.use('/api/presentations',     presentationRoutes);
+app.use('/api',                   waitlistRoutes);
+app.use('/api',                   rsvpRoutes);
 
 // ── Error handler ─────────────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {
