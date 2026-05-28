@@ -13,6 +13,7 @@ const materialsRoutes       = require('../routes/materials');
 const coachApplicationRoutes = require('../routes/coach-application');
 const sessionRoutes           = require('../routes/sessions');
 const presentationRoutes      = require('../routes/presentations');
+const courseMaterialRoutes    = require('../routes/course-materials');
 const waitlistRoutes          = require('../routes/waitlist');
 const rsvpRoutes              = require('../routes/rsvp');
 
@@ -99,6 +100,7 @@ app.use('/api/materials',         materialsRoutes);
 app.use('/api',                   coachApplicationRoutes);
 app.use('/api/sessions',          sessionRoutes);
 app.use('/api/presentations',     presentationRoutes);
+app.use('/api/course-materials',  courseMaterialRoutes);
 app.use('/api',                   waitlistRoutes);
 app.use('/api',                   rsvpRoutes);
 
