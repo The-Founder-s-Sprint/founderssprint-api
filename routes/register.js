@@ -19,43 +19,50 @@ router.post('/register', async (req, res) => {
   const resolvedPhone   = phone   || whatsapp    || null;
   const resolvedCompany = company || businessName || null;
 
-  // Validate required fields
-  if (!cohortId || !track || !firstName || !lastName || !email) {
+  // Validate required fields — VIP 1-on-1 doesn't require a cohort
+  const isVIP = (track === 'vip1on1');
+  if (!track || !firstName || !lastName || !email) {
     return res.status(400).json({ error: 'Missing required fields.' });
+  }
+  if (!cohortId && !isVIP) {
+    return res.status(400).json({ error: 'Missing cohort selection.' });
   }
   const tracks = await getTrackPricing();
   if (!tracks[track]) {
     return res.status(400).json({ error: 'Invalid track.' });
   }
 
-  let cohort;
-  try {
-    cohort = await getCohort(Number(cohortId));
-  } catch {
-    return res.status(404).json({ error: 'Cohort not found.' });
-  }
+  // VIP registrations are not cohort-bound — skip cohort validation
+  let cohort = null;
+  if (cohortId) {
+    try {
+      cohort = await getCohort(Number(cohortId));
+    } catch {
+      return res.status(404).json({ error: 'Cohort not found.' });
+    }
 
-  if (!cohort || cohort.status !== 'open') {
-    return res.status(409).json({ error: `Cohort is ${cohort?.status || 'unavailable'}.` });
-  }
+    if (!cohort || cohort.status !== 'open') {
+      return res.status(409).json({ error: `Cohort is ${cohort?.status || 'unavailable'}.` });
+    }
 
-  // Check capacity for this track
-  const TAKEN_MAP = { single:'single_taken', pick3:'pick3_taken', cohort:'cohort_taken', vip1on1:'vip1on1_taken', group:'group_taken', oneOnOne:'one_on_one_taken', vip:'vip_taken' };
-  const MAX_MAP   = { single:'single_max',   pick3:'pick3_max',   cohort:'cohort_max',   vip1on1:'vip1on1_max',   group:'group_max',   oneOnOne:'one_on_one_max',   vip:'vip_max' };
-  const takenKey = TAKEN_MAP[track] || 'single_taken';
-  const maxKey   = MAX_MAP[track]   || 'single_max';
+    // Check capacity for this track
+    const TAKEN_MAP = { single:'single_taken', pick3:'pick3_taken', cohort:'cohort_taken', vip1on1:'vip1on1_taken', group:'group_taken', oneOnOne:'one_on_one_taken', vip:'vip_taken' };
+    const MAX_MAP   = { single:'single_max',   pick3:'pick3_max',   cohort:'cohort_max',   vip1on1:'vip1on1_max',   group:'group_max',   oneOnOne:'one_on_one_max',   vip:'vip_max' };
+    const takenKey = TAKEN_MAP[track] || 'single_taken';
+    const maxKey   = MAX_MAP[track]   || 'single_max';
 
-  if (cohort[takenKey] >= cohort[maxKey]) {
-    return res.status(409).json({
-      error: `${tracks[track].label} track is full for this cohort.`,
-    });
+    if (cohort[takenKey] >= cohort[maxKey]) {
+      return res.status(409).json({
+        error: `${tracks[track].label} track is full for this cohort.`,
+      });
+    }
   }
 
   // Create registration
   let reg;
   try {
     reg = await createRegistration({
-      cohortId: cohort.id, track,
+      cohortId: cohort ? cohort.id : null, track,
       firstName, lastName, email,
       phone: resolvedPhone, company: resolvedCompany,
       sector:   sector   || null,
