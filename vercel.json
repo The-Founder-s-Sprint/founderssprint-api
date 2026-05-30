@@ -20,6 +20,10 @@
     {
       "path": "/api/cron/send-materials",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/directory-lifecycle",
+      "schedule": "0 6 * * *"
     }
   ]
 }

@@ -16,6 +16,7 @@ const presentationRoutes      = require('../routes/presentations');
 const courseMaterialRoutes    = require('../routes/course-materials');
 const waitlistRoutes          = require('../routes/waitlist');
 const rsvpRoutes              = require('../routes/rsvp');
+const directoryLifecycleRoutes = require('../routes/directory-lifecycle');
 
 const app = express();
 
@@ -103,6 +104,7 @@ app.use('/api/presentations',     presentationRoutes);
 app.use('/api/course-materials',  courseMaterialRoutes);
 app.use('/api',                   waitlistRoutes);
 app.use('/api',                   rsvpRoutes);
+app.use('/api',                   directoryLifecycleRoutes);
 
 // ── Error handler ─────────────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {
