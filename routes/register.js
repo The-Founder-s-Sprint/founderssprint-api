@@ -15,6 +15,7 @@ router.post('/register', async (req, res) => {
     company, businessName, // register.html sends as 'businessName'
     sector,                // business sector for dashboard analytics
     timeslot,              // preferred time slot for 1-on-1 / VIP
+    disciplines,           // selected discipline keys (single/pick3); cohort auto-fills all 5
   } = req.body;
   const resolvedPhone   = phone   || whatsapp    || null;
   const resolvedCompany = company || businessName || null;
@@ -67,6 +68,7 @@ router.post('/register', async (req, res) => {
       phone: resolvedPhone, company: resolvedCompany,
       sector:   sector   || null,
       timeslot: timeslot || null,
+      disciplines: disciplines || null,
     });
   } catch (err) {
     console.error('[Register] DB error:', err.message);
