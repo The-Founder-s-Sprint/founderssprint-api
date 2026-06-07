@@ -17,6 +17,7 @@ const courseMaterialRoutes    = require('../routes/course-materials');
 const waitlistRoutes          = require('../routes/waitlist');
 const rsvpRoutes              = require('../routes/rsvp');
 const directoryLifecycleRoutes = require('../routes/directory-lifecycle');
+const staffRoutes              = require('../routes/staff');
 
 const app = express();
 
@@ -105,6 +106,14 @@ app.use('/api/course-materials',  courseMaterialRoutes);
 app.use('/api',                   waitlistRoutes);
 app.use('/api',                   rsvpRoutes);
 app.use('/api',                   directoryLifecycleRoutes);
+
+// Staff onboarding (super-admin only; the route validates the JWT + admin role).
+const staffLimiter = rateLimit({
+  windowMs: 60 * 1000, max: 20,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+app.use('/api/staff',             staffLimiter, staffRoutes);
 
 // ── Error handler ─────────────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {
