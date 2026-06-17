@@ -242,7 +242,7 @@ router.get('/reconcile', requireCron, async (req, res) => {
         const { data: reg, error: rErr } = await supabase
           .from('registrations').update({ [field]: true, updated_at: new Date().toISOString() })
           .eq('id', pr.registration_id).eq(field, false) // idempotent: only if webhook didn't already set it
-          .select('*, cohorts(*)').maybeSingle();
+          .select('*, cohorts!registrations_cohort_id_fkey(*)').maybeSingle();
         if (rErr) { log.push(`reg update failed pr#${pr.id}: ${rErr.message}`); continue; }
         if (reg) {
           await supabase.from('payment_events').insert({ registration_id: pr.registration_id,

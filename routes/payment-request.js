@@ -39,7 +39,7 @@ module.exports = async (req, res) => {
   // ── Fetch registration + cohort ───────────────────────────────────────────────
   const { data: reg, error: regErr } = await supabase
     .from('registrations')
-    .select('*, cohorts(*)')
+    .select('*, cohorts!registrations_cohort_id_fkey(*)')
     .eq('id', registrationId)
     .single();
 

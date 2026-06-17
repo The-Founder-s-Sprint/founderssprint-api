@@ -127,7 +127,7 @@ module.exports = async (req, res) => {
     .update({ [field]: true, updated_at: new Date().toISOString() })
     .eq('id', payReq.registration_id)
     .eq(field, false)                 // idempotent: only if not already set (reconcile/webhook race)
-    .select('*, cohorts(*)')
+    .select('*, cohorts!registrations_cohort_id_fkey(*)')
     .maybeSingle();
 
   if (updateErr) {
