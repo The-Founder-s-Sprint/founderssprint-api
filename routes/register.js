@@ -2,7 +2,7 @@ const express = require('express');
 const router  = express.Router();
 const {
   TRACKS, getTrackPricing, getCohort, getOpenCohorts,
-  createRegistration, markDepositPaid, markFullyPaid,
+  createRegistration, ensureFounderAccount, markDepositPaid, markFullyPaid,
 } = require('../lib/db');
 const { sendConfirmation, sendNewRegistrationAdmin } = require('../lib/emailer');
 
@@ -11,6 +11,7 @@ router.post('/register', async (req, res) => {
   const {
     cohortId, track,
     firstName, lastName, email,
+    password,              // founder's chosen dashboard password (creates their login)
     phone, whatsapp,       // register.html sends as 'whatsapp'
     company, businessName, // register.html sends as 'businessName'
     sector,                // business sector for dashboard analytics
@@ -59,11 +60,21 @@ router.post('/register', async (req, res) => {
     }
   }
 
-  // Create registration
+  // Ensure the founder's login account exists (server-side, auto-confirmed, robust).
+  // Non-fatal by design: returns { userId:null } on any failure so registration +
+  // payment still proceed; the account can be created/reset later if this ever fails.
+  const account = await ensureFounderAccount({
+    email, password,
+    firstName, lastName,
+    phone: resolvedPhone, company: resolvedCompany, sector,
+  });
+
+  // Create registration (linked to the founder login account when we have one)
   let reg;
   try {
     reg = await createRegistration({
       cohortId: cohort ? cohort.id : null, track,
+      userId: account.userId,
       firstName, lastName, email,
       phone: resolvedPhone, company: resolvedCompany,
       sector:   sector   || null,
