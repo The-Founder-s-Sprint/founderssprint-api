@@ -19,8 +19,9 @@ const crypto = require('crypto');
 const {
   sendReminder14d, sendReminder7d, sendReminder96h,
   sendMovedNotification, sendForfeitNotification, sendAdminReport,
-  sendMaterialsAccess,
+  sendMaterialsAccess, sendPaymentConfirmation,
 } = require('../lib/emailer');
+const { checkTransactionStatus } = require('../lib/iotec');
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -127,7 +128,7 @@ router.get('/auto-move', requireCron, async (req, res) => {
 // Idempotent: skips founders who already have a token for this cohort.
 router.get('/send-materials', requireCron, async (req, res) => {
   const log = [];
-  const PORTAL_BASE = process.env.MATERIALS_PORTAL_URL || 'https://tmsruge.com/materials.html';
+  const PORTAL_BASE = process.env.MATERIALS_PORTAL_URL || 'https://founderssprint.co/materials.html';
 
   try {
     const cohorts = await getOpenCohorts();
@@ -198,6 +199,79 @@ router.get('/send-materials', requireCron, async (req, res) => {
     res.json({ ok: true, actions: log });
   } catch (err) {
     console.error('[Cron/send-materials] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/cron/reconcile ───────────────────────────────────────────────────
+// Safety net for missed webhooks: poll ioTec for still-pending payment_requests and
+// reconcile the DB, then forfeit registrations past their balance deadline.
+// Idempotent vs the webhook (guards on status='pending' and field=false).
+router.get('/reconcile', requireCron, async (req, res) => {
+  const log = [];
+  try {
+    // 1) Reconcile pending payment_requests >10 min old that have a transaction id.
+    // checkTransactionStatus (→ getTransaction) returns the verified ioTec status; we only
+    // resolve on TERMINAL states and verify the amount before crediting (mirrors the webhook).
+    const cutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const { data: pending, error: pErr } = await supabase
+      .from('payment_requests').select('*')
+      .eq('status', 'pending').not('transaction_id', 'is', null)
+      .lt('initiated_at', cutoff).limit(200);
+    if (pErr) throw pErr;
+
+    for (const pr of (pending || [])) {
+      let tx;
+      try { tx = await checkTransactionStatus(pr.transaction_id); }
+      catch (e) { log.push(`status-check failed pr#${pr.id}: ${e.message}`); continue; }
+      if (!tx.terminal) continue; // Pending / SentToVendor / … — leave pending
+
+      let internal = tx.internal;
+      if (internal === 'success' && Number(tx.amount) !== Number(pr.amount)) {
+        log.push(`AMOUNT MISMATCH pr#${pr.id}: expected ${pr.amount} got ${tx.amount} — flagged, not credited`);
+        internal = 'discrepancy';
+      }
+
+      await supabase.from('payment_requests')
+        .update({ status: internal, iotec_response: { reconciled: true, status: tx.status },
+                  resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', pr.id).eq('status', 'pending'); // no-op if a webhook resolved it first
+
+      if (internal === 'success') {
+        const field = pr.payment_type === 'deposit' ? 'deposit_paid' : 'balance_paid';
+        const { data: reg, error: rErr } = await supabase
+          .from('registrations').update({ [field]: true, updated_at: new Date().toISOString() })
+          .eq('id', pr.registration_id).eq(field, false) // idempotent: only if webhook didn't already set it
+          .select('*, cohorts(*)').maybeSingle();
+        if (rErr) { log.push(`reg update failed pr#${pr.id}: ${rErr.message}`); continue; }
+        if (reg) {
+          await supabase.from('payment_events').insert({ registration_id: pr.registration_id,
+            payment_type: pr.payment_type, amount: pr.amount, method: 'mobile_money',
+            reference: pr.transaction_id, note: 'ioTec reconciliation (missed webhook)' });
+          try { await sendPaymentConfirmation(reg, reg.cohorts, pr.payment_type); } catch (_) {}
+          log.push(`reconciled ${pr.payment_type} paid → reg#${pr.registration_id}`);
+        } else {
+          log.push(`pr#${pr.id} success but already marked (webhook beat us) — ok`);
+        }
+      } else {
+        log.push(`pr#${pr.id} reconciled as ${internal}`);
+      }
+    }
+
+    // 2) Forfeit registrations past the balance deadline (deposit kept, seat released)
+    const { data: lapsed, error: lErr } = await supabase
+      .from('registrations')
+      .update({ forfeited: true, updated_at: new Date().toISOString() })
+      .lt('balance_due_at', new Date().toISOString())
+      .eq('balance_paid', false).eq('deposit_paid', true).eq('forfeited', false)
+      .select('id, email, cohort_id');
+    if (lErr) log.push(`forfeit sweep failed: ${lErr.message}`);
+    else (lapsed || []).forEach(r => log.push(`forfeited reg#${r.id} (balance past deadline)`));
+
+    console.log('[Cron/reconcile]', log);
+    res.json({ ok: true, actions: log });
+  } catch (err) {
+    console.error('[Cron/reconcile] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -13,8 +13,28 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// Manual payment confirmation is an ADMIN/FINANCE override (cash, off-platform settlement).
+// It must never be public: it sets deposit_paid/balance_paid, which gate materials + access.
+async function isAuthorised(req) {
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (adminSecret && req.headers['x-admin-secret'] === adminSecret) return true;
+  const auth = req.headers.authorization || '';
+  if (!auth.startsWith('Bearer ')) return false;
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(auth.slice(7));
+    if (error || !user) return false;
+    const { data: roles } = await supabase
+      .from('user_roles').select('role').eq('user_id', user.id).in('role', ['admin', 'finance']);
+    return !!(roles && roles.length);
+  } catch { return false; }
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  if (!(await isAuthorised(req))) {
+    return res.status(403).json({ error: 'Forbidden — admin or finance only' });
+  }
 
   const { registrationId, paymentType, method, reference, note } = req.body || {};
 

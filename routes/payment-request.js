@@ -67,8 +67,7 @@ module.exports = async (req, res) => {
   const description = paymentType === 'deposit'
     ? `Founder's Sprint deposit — ${cohort?.name || 'upcoming cohort'}`
     : `Founder's Sprint balance — ${cohort?.name || 'upcoming cohort'}`;
-
-  const callbackUrl = `${API_BASE}/api/iotec/webhook`;
+  // NOTE: ioTec's callback URL is configured per-wallet in the portal, NOT per request.
 
   // ── Check for an existing pending request (prevent double-charging) ───────────
   const { data: existing } = await supabase
@@ -115,7 +114,7 @@ module.exports = async (req, res) => {
   let iotecResult;
   try {
     iotecResult = await requestCollection({
-      phone, amount, reference, description, callbackUrl,
+      phone, amount, externalId: reference, note: description,
     });
   } catch (err) {
     console.error('[payment-request] ioTec error:', err.message);
@@ -136,7 +135,7 @@ module.exports = async (req, res) => {
   await supabase
     .from('payment_requests')
     .update({
-      transaction_id: iotecResult.transactionId,
+      transaction_id: iotecResult.id,
       iotec_response: iotecResult.raw,
       updated_at:     new Date().toISOString(),
     })
@@ -146,7 +145,7 @@ module.exports = async (req, res) => {
 
   return res.status(200).json({
     ok:            true,
-    transactionId: iotecResult.transactionId,
+    transactionId: iotecResult.id,
     network,
     amount,
     currency:      'UGX',

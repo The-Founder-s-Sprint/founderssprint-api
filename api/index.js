@@ -43,7 +43,9 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json());
+// Capture the exact raw body so webhook HMAC signatures verify against the bytes
+// the sender signed (re-stringifying the parsed body would not match).
+app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = (buf && buf.length) ? buf.toString('utf8') : ''; } }));
 
 // ── Security headers ─────────────────────────────────────────────────────────
 app.use(helmet({
