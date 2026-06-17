@@ -42,26 +42,36 @@ module.exports = async (req, res) => {
   }
 
   // ── 2) Find the matching payment_request ──────────────────────────────────────
-  let query = supabase
-    .from('payment_requests')
-    .select('*')
-    .order('initiated_at', { ascending: false })
-    .limit(1);
-
-  if (iotecId) {
-    query = query.eq('transaction_id', iotecId);
-  } else {
-    const match = String(extId).match(/^FS-(DEPOSIT|BALANCE|DEP|BAL)-(\d+)$/i);
-    if (!match) {
-      console.error('[iotec-webhook] Cannot identify payment from payload:', payload);
-      return res.status(400).json({ error: 'Cannot match payment request from payload' });
+  // Match by ioTec id first, then FALL BACK to externalId. The fallback closes a race:
+  // payment-request.js writes transaction_id to the row only AFTER ioTec's collect call
+  // returns, but ioTec (especially in sandbox) can fire the callback before that write
+  // commits. A transaction_id-only lookup would then miss and the callback would be
+  // dropped (only the daily reconcile recovers it). externalId — "FS-DEPOSIT-<regId>" /
+  // "FS-BALANCE-<regId>" — deterministically identifies the registration + payment type,
+  // so it's a reliable fallback. Step 5 below stamps the authoritative transaction_id.
+  async function findPaymentRequest() {
+    if (iotecId) {
+      const { data } = await supabase
+        .from('payment_requests').select('*')
+        .eq('transaction_id', iotecId)
+        .order('initiated_at', { ascending: false }).limit(1).maybeSingle();
+      if (data) return data;
     }
-    const paymentType = match[1].toUpperCase().startsWith('D') ? 'deposit' : 'balance';
-    query = query.eq('registration_id', parseInt(match[2], 10)).eq('payment_type', paymentType);
+    const match = String(extId).match(/^FS-(DEPOSIT|BALANCE|DEP|BAL)-(\d+)$/i);
+    if (match) {
+      const paymentType = match[1].toUpperCase().startsWith('D') ? 'deposit' : 'balance';
+      const { data } = await supabase
+        .from('payment_requests').select('*')
+        .eq('registration_id', parseInt(match[2], 10))
+        .eq('payment_type', paymentType)
+        .order('initiated_at', { ascending: false }).limit(1).maybeSingle();
+      if (data) return data;
+    }
+    return null;
   }
 
-  const { data: payReq, error: findErr } = await query.maybeSingle();
-  if (findErr || !payReq) {
+  const payReq = await findPaymentRequest();
+  if (!payReq) {
     // 200 so ioTec stops retrying; we log + the reconcile cron is the safety net.
     console.error('[iotec-webhook] payment_request not found for', { iotecId, extId });
     return res.status(200).json({ ok: true, note: 'payment_request not found — logged' });
