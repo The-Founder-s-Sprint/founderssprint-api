@@ -18,6 +18,7 @@ const waitlistRoutes          = require('../routes/waitlist');
 const rsvpRoutes              = require('../routes/rsvp');
 const directoryLifecycleRoutes = require('../routes/directory-lifecycle');
 const staffRoutes              = require('../routes/staff');
+const testimonialRoutes        = require('../routes/testimonial');
 
 const app = express();
 
@@ -93,6 +94,7 @@ app.use('/api/coach-application', strictLimiter);
 app.use('/api/coach-upload',      strictLimiter);
 app.use('/api/payment-request',   paymentLimiter);
 app.use('/api/confirm-payment',   paymentLimiter);
+app.use('/api/testimonial',       strictLimiter);
 
 app.use('/api',                   registerRoutes);
 app.use('/api/admin',             adminRoutes);
@@ -100,6 +102,7 @@ app.use('/api/cron',              cronRoutes);
 app.post('/api/confirm-payment',  confirmPaymentRoutes);
 app.post('/api/payment-request',  paymentRequestRoutes);
 app.post('/api/iotec/webhook',    iotecWebhookRoutes);
+app.post('/api/testimonial',      testimonialRoutes);
 app.use('/api/materials',         materialsRoutes);
 app.use('/api',                   coachApplicationRoutes);
 app.use('/api/sessions',          sessionRoutes);
