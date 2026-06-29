@@ -19,6 +19,7 @@ const rsvpRoutes              = require('../routes/rsvp');
 const directoryLifecycleRoutes = require('../routes/directory-lifecycle');
 const staffRoutes              = require('../routes/staff');
 const testimonialRoutes        = require('../routes/testimonial');
+const mentorRecommendationRoutes = require('../routes/mentor-recommendation');
 
 const app = express();
 
@@ -95,6 +96,7 @@ app.use('/api/coach-upload',      strictLimiter);
 app.use('/api/payment-request',   paymentLimiter);
 app.use('/api/confirm-payment',   paymentLimiter);
 app.use('/api/testimonial',       strictLimiter);
+app.use('/api/mentor-recommendation', strictLimiter);
 
 app.use('/api',                   registerRoutes);
 app.use('/api/admin',             adminRoutes);
@@ -103,6 +105,7 @@ app.post('/api/confirm-payment',  confirmPaymentRoutes);
 app.post('/api/payment-request',  paymentRequestRoutes);
 app.post('/api/iotec/webhook',    iotecWebhookRoutes);
 app.post('/api/testimonial',      testimonialRoutes);
+app.post('/api/mentor-recommendation', mentorRecommendationRoutes);
 app.use('/api/materials',         materialsRoutes);
 app.use('/api',                   coachApplicationRoutes);
 app.use('/api/sessions',          sessionRoutes);
