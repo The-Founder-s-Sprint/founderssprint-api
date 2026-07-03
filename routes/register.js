@@ -4,6 +4,7 @@ const {
   TRACKS, getTrackPricing, getCohort, getOpenCohorts,
   createRegistration, ensureFounderAccount, markDepositPaid, markFullyPaid,
 } = require('../lib/db');
+const { validateSpecialties } = require('../lib/taxonomy');
 const { sendConfirmation, sendNewRegistrationAdmin } = require('../lib/emailer');
 
 // ── POST /api/register ────────────────────────────────────────────────────────
@@ -17,21 +18,34 @@ router.post('/register', async (req, res) => {
     sector,                // business sector for dashboard analytics
     timeslot,              // preferred time slot for 1-on-1 / VIP
     disciplines,           // selected discipline keys (single/pick3); cohort auto-fills all 5
+    enrolledSpecialties,   // L3 slugs — the atomic bookable unit (book/ flow)
   } = req.body;
   const resolvedPhone   = phone   || whatsapp    || null;
   const resolvedCompany = company || businessName || null;
 
-  // Validate required fields — VIP 1-on-1 doesn't require a cohort
-  const isVIP = (track === 'vip1on1');
+  // Only the Full Cohort is cohort-bound (group programme). single / pick3 / VIP
+  // are standalone L3 1:1s scheduled against coach availability — they don't take
+  // a cohort seat, matching the L3-as-unit model.
+  const cohortBound = (track === 'cohort');
   if (!track || !firstName || !lastName || !email) {
     return res.status(400).json({ error: 'Missing required fields.' });
   }
-  if (!cohortId && !isVIP) {
+  if (cohortBound && !cohortId) {
     return res.status(400).json({ error: 'Missing cohort selection.' });
   }
   const tracks = await getTrackPricing();
   if (!tracks[track]) {
     return res.status(400).json({ error: 'Invalid track.' });
+  }
+
+  // Validate the purchased specialties (count-per-track + valid L3 slugs) when
+  // supplied. The legacy discipline-based register.html flow omits them, so this
+  // only fires for the L3 book/ flow. Prevents e.g. a Pick-3 price for 1 session.
+  let cleanSpecialties = null;
+  if (enrolledSpecialties !== undefined && enrolledSpecialties !== null) {
+    const v = validateSpecialties(track, enrolledSpecialties);
+    if (!v.ok) return res.status(400).json({ error: v.error });
+    cleanSpecialties = v.clean;
   }
 
   // VIP registrations are not cohort-bound — skip cohort validation
@@ -80,6 +94,7 @@ router.post('/register', async (req, res) => {
       sector:   sector   || null,
       timeslot: timeslot || null,
       disciplines: disciplines || null,
+      enrolledSpecialties: cleanSpecialties,
     });
   } catch (err) {
     console.error('[Register] DB error:', err.message);
@@ -101,8 +116,8 @@ router.post('/register', async (req, res) => {
 
   return res.status(201).json({
     registrationId: reg.id,
-    cohortName:     cohort.name,
-    cohortDates:    cohort.dates || `${cohort.start_date} – ${cohort.end_date}`,
+    cohortName:     cohort ? cohort.name : null,
+    cohortDates:    cohort ? (cohort.dates || `${cohort.start_date} – ${cohort.end_date}`) : null,
     track:          tracks[track].label,
     fullFee:        reg.full_fee,
     depositAmount:  reg.deposit_amount,

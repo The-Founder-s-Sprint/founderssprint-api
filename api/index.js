@@ -20,6 +20,7 @@ const directoryLifecycleRoutes = require('../routes/directory-lifecycle');
 const staffRoutes              = require('../routes/staff');
 const testimonialRoutes        = require('../routes/testimonial');
 const mentorRecommendationRoutes = require('../routes/mentor-recommendation');
+const mentorChargeRoutes         = require('../routes/mentor-charge');
 
 const app = express();
 
@@ -122,6 +123,9 @@ const staffLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later.' },
 });
 app.use('/api/staff',             staffLimiter, staffRoutes);
+
+// Mentor post-approval payment (admin/finance only; validates JWT + role inside).
+app.post('/api/mentor/charge',    staffLimiter, mentorChargeRoutes.requireStaffPay, mentorChargeRoutes.charge);
 
 // ── Error handler ─────────────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {

@@ -17,12 +17,73 @@
  */
 const { createClient } = require('@supabase/supabase-js');
 const { verifyCallbackHeader, getTransaction } = require('../lib/iotec');
-const { sendPaymentConfirmation } = require('../lib/emailer');
+const { sendPaymentConfirmation, sendMentorConfirmed } = require('../lib/emailer');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+// ── Mentor session payment callback (externalId "FS-MENTOR-<requestId>") ────────
+// Same authoritative model as registrations: re-fetch the transaction from ioTec,
+// guard the amount, and only then flip the request to paid/confirmed + notify.
+async function handleMentorCallback(res, { iotecId, extId }) {
+  const m = String(extId).match(/^FS-MENTOR-(.+)$/i);
+  let mreq = null;
+  if (m) {
+    const { data } = await supabase.from('mentor_session_requests').select('*').eq('id', m[1]).maybeSingle();
+    mreq = data;
+  }
+  if (!mreq && iotecId) {
+    const { data } = await supabase.from('mentor_session_requests').select('*').eq('payment_transaction_id', iotecId).maybeSingle();
+    mreq = data;
+  }
+  if (!mreq) {
+    console.error('[iotec-webhook] mentor request not found for', { iotecId, extId });
+    return res.status(200).json({ ok: true, note: 'mentor request not found — logged' });
+  }
+  if (mreq.payment_status === 'paid') return res.status(200).json({ ok: true, note: 'Already paid' });
+
+  const refId = iotecId || mreq.payment_transaction_id;
+  if (!refId) return res.status(200).json({ ok: true, note: 'No transaction id to verify; left pending' });
+
+  let tx;
+  try { tx = await getTransaction(refId); }
+  catch (e) {
+    console.error('[iotec-webhook] mentor status re-fetch failed:', e.message);
+    return res.status(200).json({ ok: true, note: 'Could not verify yet; left pending' });
+  }
+  if (!tx.terminal) return res.status(200).json({ ok: true, note: `In-flight (${tx.status}); left pending` });
+
+  const expected = Number(mreq.amount_charged || mreq.quoted_fee);
+  let internal = tx.internal;
+  if (internal === 'success' && Number(tx.amount) !== expected) {
+    console.error('[iotec-webhook] MENTOR AMOUNT MISMATCH', { req: mreq.id, expected, got: tx.amount });
+    internal = 'discrepancy';   // do NOT confirm — finance review
+  }
+
+  if (internal !== 'success') {
+    // failed → mark failed so staff can retry; discrepancy/other → leave pending + logged
+    if (internal === 'failed') {
+      await supabase.from('mentor_session_requests')
+        .update({ payment_status: 'failed', payment_transaction_id: refId })
+        .eq('id', mreq.id).eq('payment_status', 'pending');
+    }
+    return res.status(200).json({ ok: true, status: internal });
+  }
+
+  // verified success → confirm (idempotent), notify founder + admin
+  const { data: updated } = await supabase.from('mentor_session_requests')
+    .update({ payment_status: 'paid', paid_at: new Date().toISOString(), payment_transaction_id: refId, status: 'confirmed' })
+    .eq('id', mreq.id).neq('payment_status', 'paid').select('*').maybeSingle();
+  if (updated) {
+    let mentor = null;
+    try { const { data } = await supabase.from('mentors').select('name,title').eq('id', updated.mentor_id).single(); mentor = data; } catch (e) {}
+    try { await sendMentorConfirmed(updated, mentor); } catch (e) { console.error('[iotec-webhook] mentor confirm email failed:', e.message); }
+    console.log(`[iotec-webhook] ✓ mentor session paid + confirmed: ${updated.id}`);
+  }
+  return res.status(200).json({ ok: true, status: 'success' });
+}
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -39,6 +100,11 @@ module.exports = async (req, res) => {
 
   if (!iotecId && !extId) {
     return res.status(400).json({ error: 'id or externalId is required' });
+  }
+
+  // Mentor session payments take a separate path (their own table, not payment_requests).
+  if (/^FS-MENTOR-/i.test(String(extId))) {
+    return handleMentorCallback(res, { iotecId, extId });
   }
 
   // ── 2) Find the matching payment_request ──────────────────────────────────────
