@@ -24,13 +24,13 @@ router.post('/rsvp', async (req, res) => {
       .from('event_rsvps')
       .upsert(
         {
-          event_name: (event_name || 'launch-july-2026').trim(),
-          name:       (name || '').trim() || null,
-          email:      email.trim().toLowerCase(),
-          phone:      (phone || '').trim() || null,
-          company:    (company || '').trim() || null,
+          event_name: (event_name || 'launch-july-2026').trim().slice(0, 80),
+          name:       (name || '').trim().slice(0, 120) || null,
+          email:      email.trim().toLowerCase().slice(0, 254),
+          phone:      (phone || '').trim().slice(0, 40) || null,
+          company:    (company || '').trim().slice(0, 160) || null,
           guest_count: Math.min(Math.max(parseInt(guest_count) || 1, 1), 5),
-          notes:      (notes || '').trim() || null,
+          notes:      (notes || '').trim().slice(0, 1000) || null,
         },
         { onConflict: 'event_name,email' }
       )

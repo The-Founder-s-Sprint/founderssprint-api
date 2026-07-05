@@ -30,6 +30,12 @@ router.post('/register', async (req, res) => {
   if (!track || !firstName || !lastName || !email) {
     return res.status(400).json({ error: 'Missing required fields.' });
   }
+  // Validate email format + bound every free-text field (defense-in-depth: prevents
+  // oversized payloads and shrinks any stored-XSS blast radius in the dashboards).
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email)) || String(email).length > 254) {
+    return res.status(400).json({ error: 'Please enter a valid email address.' });
+  }
+  const cap = (v, n) => (v == null || v === '') ? null : String(v).trim().slice(0, n);
   if (cohortBound && !cohortId) {
     return res.status(400).json({ error: 'Missing cohort selection.' });
   }
@@ -89,10 +95,10 @@ router.post('/register', async (req, res) => {
     reg = await createRegistration({
       cohortId: cohort ? cohort.id : null, track,
       userId: account.userId,
-      firstName, lastName, email,
-      phone: resolvedPhone, company: resolvedCompany,
-      sector:   sector   || null,
-      timeslot: timeslot || null,
+      firstName: cap(firstName, 120), lastName: cap(lastName, 120), email: String(email).trim().slice(0, 254),
+      phone: cap(resolvedPhone, 40), company: cap(resolvedCompany, 160),
+      sector:   cap(sector, 80),
+      timeslot: cap(timeslot, 80),
       disciplines: disciplines || null,
       enrolledSpecialties: cleanSpecialties,
     });

@@ -26,11 +26,11 @@ router.post('/waitlist', async (req, res) => {
       .from('waitlist')
       .upsert(
         {
-          name:     (name || '').trim() || null,
-          email:    email.trim().toLowerCase(),
-          phone:    (phone || '').trim() || null,
-          business: (business || '').trim() || null,
-          source:   (source || 'website').trim(),
+          name:     (name || '').trim().slice(0, 120) || null,
+          email:    email.trim().toLowerCase().slice(0, 254),
+          phone:    (phone || '').trim().slice(0, 40) || null,
+          business: (business || '').trim().slice(0, 160) || null,
+          source:   (source || 'website').trim().slice(0, 60),
         },
         { onConflict: 'email' }
       )
