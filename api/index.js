@@ -23,6 +23,7 @@ const mentorRecommendationRoutes = require('../routes/mentor-recommendation');
 const mentorChargeRoutes         = require('../routes/mentor-charge');
 const bugReportRoutes            = require('../routes/bug-report');
 const mentorApplyRoutes          = require('../routes/mentor-apply');
+const mentorApplyPhotoRoutes     = require('../routes/mentor-apply-photo');
 const directoryApplicationRoutes = require('../routes/directory-application');
 const investorApplicationRoutes  = require('../routes/investor-application');
 
@@ -116,6 +117,7 @@ app.use('/api/mentor-recommendation', strictLimiter);
 // behind the strict limiter (they bypassed both Cloudflare and this API before).
 app.use('/api/bug-report',            strictLimiter);
 app.use('/api/mentor-apply',          strictLimiter);
+app.use('/api/mentor-apply-photo',    strictLimiter);
 app.use('/api/directory-application', strictLimiter);
 app.use('/api/investor-application',  strictLimiter);
 
@@ -129,6 +131,7 @@ app.post('/api/testimonial',      testimonialRoutes);
 app.post('/api/mentor-recommendation', mentorRecommendationRoutes);
 app.post('/api/bug-report',            bugReportRoutes);
 app.post('/api/mentor-apply',          mentorApplyRoutes);
+app.post('/api/mentor-apply-photo',    mentorApplyPhotoRoutes);
 app.post('/api/directory-application', directoryApplicationRoutes);
 app.post('/api/investor-application',  investorApplicationRoutes);
 app.use('/api/materials',         materialsRoutes);
