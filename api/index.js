@@ -21,8 +21,22 @@ const staffRoutes              = require('../routes/staff');
 const testimonialRoutes        = require('../routes/testimonial');
 const mentorRecommendationRoutes = require('../routes/mentor-recommendation');
 const mentorChargeRoutes         = require('../routes/mentor-charge');
+const bugReportRoutes            = require('../routes/bug-report');
+const mentorApplyRoutes          = require('../routes/mentor-apply');
+const directoryApplicationRoutes = require('../routes/directory-application');
+const investorApplicationRoutes  = require('../routes/investor-application');
 
 const app = express();
+
+// ── Proxy trust ───────────────────────────────────────────────────────────────
+// We run behind Vercel's proxy, which sets X-Forwarded-For. Without this,
+// req.ip is the PROXY's address, so express-rate-limit buckets every visitor
+// under one key — making the limits GLOBAL rather than per-IP (e.g. payment
+// requests capped at 3/min for the whole platform, not 3/min per person, and
+// one abuser locking out everyone). Trust exactly ONE hop: `true` would trust
+// any client-supplied X-Forwarded-For and let an attacker spoof their IP to
+// dodge the limiter entirely.
+app.set('trust proxy', 1);
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
@@ -98,6 +112,12 @@ app.use('/api/payment-request',   paymentLimiter);
 app.use('/api/confirm-payment',   paymentLimiter);
 app.use('/api/testimonial',       strictLimiter);
 app.use('/api/mentor-recommendation', strictLimiter);
+// Public write surfaces moved off the browser→Supabase direct path so they sit
+// behind the strict limiter (they bypassed both Cloudflare and this API before).
+app.use('/api/bug-report',            strictLimiter);
+app.use('/api/mentor-apply',          strictLimiter);
+app.use('/api/directory-application', strictLimiter);
+app.use('/api/investor-application',  strictLimiter);
 
 app.use('/api',                   registerRoutes);
 app.use('/api/admin',             adminRoutes);
@@ -107,6 +127,10 @@ app.post('/api/payment-request',  paymentRequestRoutes);
 app.post('/api/iotec/webhook',    iotecWebhookRoutes);
 app.post('/api/testimonial',      testimonialRoutes);
 app.post('/api/mentor-recommendation', mentorRecommendationRoutes);
+app.post('/api/bug-report',            bugReportRoutes);
+app.post('/api/mentor-apply',          mentorApplyRoutes);
+app.post('/api/directory-application', directoryApplicationRoutes);
+app.post('/api/investor-application',  investorApplicationRoutes);
 app.use('/api/materials',         materialsRoutes);
 app.use('/api',                   coachApplicationRoutes);
 app.use('/api/sessions',          sessionRoutes);
