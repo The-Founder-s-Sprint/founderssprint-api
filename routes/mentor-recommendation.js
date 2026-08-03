@@ -13,11 +13,14 @@
  * Admin review + invite happens in the Command Centre (Mentors portal).
  */
 const { createClient } = require('@supabase/supabase-js');
+const { sendMentorRecommendationInvite } = require('../lib/emailer');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const clean = (v, max) => {
   if (v == null) return null;
@@ -43,14 +46,17 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'That email looks off.' });
   }
 
+  const prospect_link    = clean(b.prospect_link, 400);
+  const recommender_name = clean(b.recommender_name, 160);
+
   // ── Insert via service role; status forced to 'new' ─────────────────────────
   try {
     const { error } = await supabase.from('mentor_recommendations').insert({
       prospect_name,
       prospect_company:  clean(b.prospect_company, 200),
-      prospect_link:     clean(b.prospect_link, 400),
+      prospect_link,
       reason,
-      recommender_name:  clean(b.recommender_name, 160),
+      recommender_name,
       recommender_email,
       status: 'new',
     });
@@ -58,7 +64,20 @@ module.exports = async (req, res) => {
       console.error('[mentor-recommendation] insert error:', error.message);
       return res.status(500).json({ error: 'Could not submit. Please try again.' });
     }
-    return res.status(201).json({ ok: true });
+
+    // Automate onboarding: if the nominee's contact is an email, invite them to
+    // self-register right away (best-effort — never fail the submission on email).
+    let invited = false;
+    if (prospect_link && EMAIL_RE.test(prospect_link)) {
+      try {
+        const r = await sendMentorRecommendationInvite({ email: prospect_link, prospect_name, recommender_name });
+        invited = !!(r && r.ok);
+      } catch (e) {
+        console.error('[mentor-recommendation] invite email failed:', e.message);
+      }
+    }
+
+    return res.status(201).json({ ok: true, invited });
   } catch (e) {
     console.error('[mentor-recommendation] error:', e.message);
     return res.status(500).json({ error: 'Could not submit. Please try again.' });
