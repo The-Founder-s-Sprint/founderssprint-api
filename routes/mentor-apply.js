@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
     const { data, error } = await supabase.rpc('submit_public_mentor_application', { p });
     if (error) {
       // The function raises human-readable messages for the validation cases.
-      const known = /Name required|Valid email required|Consent required/i.test(error.message || '');
+      const known = /Name required|Valid email required|Consent required|Phone required|Photo required|Format required|Fee required|Specialty required/i.test(error.message || '');
       if (known) return res.status(400).json({ error: error.message });
       console.error('[mentor-apply] rpc error:', error.message);
       return res.status(500).json({ error: 'Could not submit. Please try again.' });
