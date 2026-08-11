@@ -5,7 +5,7 @@ const {
   createRegistration, ensureFounderAccount, markDepositPaid, markFullyPaid,
 } = require('../lib/db');
 const { validateSpecialties } = require('../lib/taxonomy');
-const { sendConfirmation, sendNewRegistrationAdmin } = require('../lib/emailer');
+const { sendConfirmation, sendReservationConfirmation, sendNewRegistrationAdmin } = require('../lib/emailer');
 
 // ── POST /api/register ────────────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
@@ -19,7 +19,9 @@ router.post('/register', async (req, res) => {
     timeslot,              // preferred time slot for 1-on-1 / VIP
     disciplines,           // selected discipline keys (single/pick3); cohort auto-fills all 5
     enrolledSpecialties,   // L3 slugs — the atomic bookable unit (book/ flow)
+    preview,               // PREVIEW LAUNCH: save as interest, no deposit instructions
   } = req.body;
+  const isPreview = preview === true || preview === 'true';
   const resolvedPhone   = phone   || whatsapp    || null;
   const resolvedCompany = company || businessName || null;
 
@@ -110,8 +112,8 @@ router.post('/register', async (req, res) => {
   // Await both emails before responding — Vercel kills the function on res.send()
   // Promise.allSettled so one failure doesn't block the other
   const [confirmResult, adminResult] = await Promise.allSettled([
-    sendConfirmation(reg, cohort),
-    sendNewRegistrationAdmin(reg, cohort),
+    isPreview ? sendReservationConfirmation(reg, cohort) : sendConfirmation(reg, cohort),
+    sendNewRegistrationAdmin(reg, cohort, isPreview),
   ]);
   if (confirmResult.status === 'rejected') {
     console.error('[Register] Confirmation email failed:', confirmResult.reason);
