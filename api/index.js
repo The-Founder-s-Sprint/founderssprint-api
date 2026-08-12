@@ -26,6 +26,7 @@ const mentorApplyRoutes          = require('../routes/mentor-apply');
 const mentorApplyPhotoRoutes     = require('../routes/mentor-apply-photo');
 const directoryApplicationRoutes = require('../routes/directory-application');
 const investorApplicationRoutes  = require('../routes/investor-application');
+const graceRoutes                = require('../routes/grace');
 
 const app = express();
 
@@ -120,6 +121,7 @@ app.use('/api/mentor-apply',          strictLimiter);
 app.use('/api/mentor-apply-photo',    strictLimiter);
 app.use('/api/directory-application', strictLimiter);
 app.use('/api/investor-application',  strictLimiter);
+app.use('/api/grace',                 strictLimiter);
 
 app.use('/api',                   registerRoutes);
 app.use('/api/admin',             adminRoutes);
@@ -134,6 +136,7 @@ app.post('/api/mentor-apply',          mentorApplyRoutes);
 app.post('/api/mentor-apply-photo',    mentorApplyPhotoRoutes);
 app.post('/api/directory-application', directoryApplicationRoutes);
 app.post('/api/investor-application',  investorApplicationRoutes);
+app.use('/api/grace',                  graceRoutes);
 app.use('/api/materials',         materialsRoutes);
 app.use('/api',                   coachApplicationRoutes);
 app.use('/api/sessions',          sessionRoutes);

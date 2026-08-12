@@ -13,13 +13,14 @@ const {
   getOpenCohorts, getRegistrationsForCohort,
   getDepositPaidUnpaidBalance, getUnpaidDepositForCohort,
   getNextOpenCohort, moveRegistration, forfeitRegistration,
+  enterBalanceGrace, getNextOpenCohortByDate, rollRegistrationForward,
   daysUntil,
 } = require('../lib/db');
 const crypto = require('crypto');
 const {
   sendReminder14d, sendReminder7d, sendReminder96h,
   sendMovedNotification, sendForfeitNotification, sendAdminReport,
-  sendMaterialsAccess, sendPaymentConfirmation,
+  sendMaterialsAccess, sendPaymentConfirmation, sendBalanceGraceChoice,
 } = require('../lib/emailer');
 const { checkTransactionStatus } = require('../lib/iotec');
 const { createClient } = require('@supabase/supabase-js');
@@ -87,30 +88,56 @@ router.get('/reminders', requireCron, async (req, res) => {
 });
 
 // ── GET /api/cron/auto-move ───────────────────────────────────────────────────
-// At T-48h: move founders who paid deposit but not balance → next cohort.
-// Forfeit anyone with no deposit and no next cohort.
+// Balance-delinquency pathway (locked policy):
+//  Phase 1 — at T-48h, any deposit-paid / balance-unpaid founder has their seat
+//    released and is emailed a CHOICE: roll everything paid to the next cohort, or
+//    request a refund of what they paid ABOVE the non-refundable 10% deposit.
+//  Phase 2 — when a founder's decision window lapses with no choice, the default
+//    (locked) is to ROLL them forward to the next open cohort (forfeit only if
+//    there is no next cohort). Money is never moved here — refunds are ops tasks.
 router.get('/auto-move', requireCron, async (req, res) => {
   const log = [];
+  const BASE = process.env.SITE_BASE || 'https://founderssprint.co';
   try {
+    // Phase 1 — open the grace/choice window at T-48h.
     const cohorts = await getOpenCohorts();
-
     for (const cohort of cohorts) {
-      const days = daysUntil(cohort.start_date);
-      if (days !== 2) continue;
+      if (daysUntil(cohort.start_date) !== 2) continue;
+      const delinquent = await getDepositPaidUnpaidBalance(cohort.id);
+      for (const reg of delinquent) {
+        if (reg.balance_grace_token) continue;               // already in grace
+        const grace = await enterBalanceGrace(reg);          // frees seat, sets token + 7-day deadline
+        if (!grace) continue;
+        const next      = await getNextOpenCohortByDate(cohort);
+        const choiceUrl = `${BASE}/renew.html?token=${grace.token}`;
+        await sendBalanceGraceChoice(reg, cohort, next, choiceUrl, grace.deadline);
+        log.push(`Grace opened reg ${reg.id} (cohort ${cohort.id}); next=${next ? next.id : 'none'}`);
+      }
+    }
 
-      // Unpaid deposit founders → move (or forfeit if no next cohort)
-      const unpaid = await getUnpaidDepositForCohort(cohort.id);
-      for (const reg of unpaid) {
-        const next = await getNextOpenCohort(cohort.id);
-        if (next) {
-          await moveRegistration(reg.id, next.id);
-          await sendMovedNotification(reg, cohort, next);
-          log.push(`Moved reg ${reg.id}: cohort ${cohort.id} → ${next.id}`);
-        } else {
-          await forfeitRegistration(reg.id);
-          await sendForfeitNotification(reg, cohort);
-          log.push(`Forfeited reg ${reg.id} (no next cohort)`);
-        }
+    // Phase 2 — resolve lapsed decision windows (default = roll forward).
+    const nowIso = new Date().toISOString();
+    const { data: expired, error } = await supabase
+      .from('registrations')
+      .select('*, cohort:cohorts!registrations_cohort_id_fkey(*)')
+      .not('balance_grace_token', 'is', null)
+      .is('balance_choice', null)
+      .lt('balance_grace_deadline', nowIso)
+      .eq('forfeited', false);
+    if (error) throw error;
+    for (const reg of (expired || [])) {
+      const next = reg.cohort ? await getNextOpenCohortByDate(reg.cohort) : null;
+      if (next) {
+        const applied = await rollRegistrationForward(reg, next); // seat already freed; takes one in next
+        if (applied) { await sendMovedNotification(reg, reg.cohort, next); log.push(`Auto-rolled reg ${reg.id} → cohort ${next.id} (grace lapsed)`); }
+        else { log.push(`reg ${reg.id} already resolved — skipped`); }
+      } else {
+        // No next cohort — mark forfeited (seat already released, so no counter change).
+        await supabase.from('registrations')
+          .update({ forfeited: true, updated_at: nowIso })
+          .eq('id', reg.id);
+        await sendForfeitNotification(reg, reg.cohort || {});
+        log.push(`Forfeited reg ${reg.id} (grace lapsed, no next cohort)`);
       }
     }
 
