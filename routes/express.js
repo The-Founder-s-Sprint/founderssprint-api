@@ -16,6 +16,8 @@ const router  = express.Router();
 const crypto  = require('crypto');
 const { ensureFounderAccount } = require('../lib/db');
 const { sendExpressBookingRequest, sendExpressBookingAdmin, sendExpressConfirmed } = require('../lib/emailer');
+const { createMeetSession } = require('../lib/google-calendar');
+const EXPRESS_COACH_EMAIL = process.env.EXPRESS_COACH_EMAIL || 'teddy@founderssprint.co';
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -121,16 +123,47 @@ router.post('/confirm', async (req, res) => {
   try {
     const { id, meetLink } = req.body || {};
     if (!id) return res.status(400).json({ error: 'Missing booking id.' });
+
+    // Load the booking first — we need its time + attendee to create the Meet event.
+    const { data: bk, error: fe } = await supabase.from('express_bookings').select('*').eq('id', id).maybeSingle();
+    if (fe) return res.status(500).json({ error: fe.message });
+    if (!bk) return res.status(404).json({ error: 'Booking not found.' });
+
+    // Meet link: a pasted one wins (manual override); otherwise auto-create via Google Calendar.
+    let meet = (meetLink || '').trim() || null;
+    let meetEventId = bk.meet_event_id || null;
+    let warning = null;
+    if (!meet) {
+      try {
+        const r = await createMeetSession({
+          coachEmail:      EXPRESS_COACH_EMAIL,
+          attendees:       bk.email ? [bk.email] : [],
+          title:           "The Founder's Sprint — Express 1:1",
+          description:     `Express 1:1 session with ${(bk.first_name || 'a founder')}${bk.last_name ? (' ' + bk.last_name) : ''} (ref ${bk.payment_ref || ''}).`,
+          startTime:       bk.slot_start,
+          durationMinutes: bk.duration_min || 60,
+          timezone:        'Africa/Kampala',
+        });
+        meet = r.meetLink;
+        meetEventId = r.calendarEventId || meetEventId;
+      } catch (e) {
+        console.error('[Express] Meet auto-create failed:', e.message);
+        warning = 'Confirmed, but the Google Meet link could not be auto-created — paste one manually and confirm again. (' + e.message + ')';
+      }
+    }
+
     const { data: b, error } = await supabase
       .from('express_bookings')
-      .update({ status: 'confirmed', meet_link: (meetLink || '').trim() || null, updated_at: new Date().toISOString() })
+      .update({ status: 'confirmed', meet_link: meet, meet_event_id: meetEventId, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select('*')
       .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
     if (!b) return res.status(404).json({ error: 'Booking not found.' });
-    try { await sendExpressConfirmed(b); } catch (e) { console.error('[Express] confirm email:', e.message); }
-    return res.json({ ok: true });
+
+    // Only send the confirmation (which carries the link) once we actually have a link.
+    if (b.meet_link) { try { await sendExpressConfirmed(b); } catch (e) { console.error('[Express] confirm email:', e.message); } }
+    return res.json({ ok: true, meetLink: b.meet_link, warning });
   } catch (err) {
     console.error('[Express] confirm:', err.message);
     return res.status(500).json({ error: 'Something went wrong. Please try again.' });

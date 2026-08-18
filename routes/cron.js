@@ -21,6 +21,7 @@ const {
   sendReminder14d, sendReminder7d, sendReminder96h,
   sendMovedNotification, sendForfeitNotification, sendAdminReport,
   sendMaterialsAccess, sendPaymentConfirmation, sendBalanceGraceChoice,
+  sendMonthlyNudge,
 } = require('../lib/emailer');
 const { checkTransactionStatus } = require('../lib/iotec');
 const { createClient } = require('@supabase/supabase-js');
@@ -299,6 +300,69 @@ router.get('/reconcile', requireCron, async (req, res) => {
     res.json({ ok: true, actions: log });
   } catch (err) {
     console.error('[Cron/reconcile] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/cron/monthly-nudge ───────────────────────────────────────────────
+// Near month-end (28th): remind founders whose company has NOT logged this month's
+// check-in. One email per founder per month (deduped via founder_report_nudges).
+// Ungated — every founder with a company reports, paid or not (Phase 0 decision D4).
+router.get('/monthly-nudge', requireCron, async (req, res) => {
+  const log = [];
+  const BASE    = process.env.SITE_BASE || 'https://founderssprint.co';
+  const dashUrl = `${BASE}/login-founder.html`;
+  try {
+    const now        = new Date();
+    const monthKey   = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
+    const monthLabel = now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+    // Active companies + their founder id
+    const { data: comps, error: cErr } = await supabase
+      .from('companies').select('id, founder_id, status');
+    if (cErr) throw cErr;
+    const active = (comps || []).filter(c => c.status !== 'archived' && c.founder_id);
+    if (!active.length) return res.json({ ok: true, month: monthKey, actions: ['no active companies'] });
+
+    // Companies that already reported this month
+    const { data: reps, error: rErr } = await supabase
+      .from('founder_monthly_reports').select('company_id').eq('period_month', monthKey);
+    if (rErr) throw rErr;
+    const reported = new Set((reps || []).map(r => r.company_id));
+
+    // Founders (people) resolved from their profiles
+    const fids = [...new Set(active.map(c => c.founder_id))];
+    const { data: founders, error: fErr } = await supabase
+      .from('founder_profiles').select('id, first_name, email, status').in('id', fids);
+    if (fErr) throw fErr;
+    const fmap = new Map((founders || []).map(f => [f.id, f]));
+
+    // Founders with ≥1 company missing this month's report (one nudge per person)
+    const toNudge = new Map();
+    for (const c of active) {
+      if (reported.has(c.id)) continue;
+      const f = fmap.get(c.founder_id);
+      if (!f || !f.email || f.status === 'deleted') continue;
+      if (!toNudge.has(f.id)) toNudge.set(f.id, f);
+    }
+
+    for (const f of toNudge.values()) {
+      // Dedupe: insert-guard makes this at-most-once per founder per month.
+      const { error: insErr } = await supabase
+        .from('founder_report_nudges').insert({ founder_id: f.id, period_month: monthKey });
+      if (insErr) {
+        if (insErr.code === '23505') log.push(`skip (already nudged) ${f.email}`);
+        else log.push(`log-fail ${f.email}: ${insErr.message}`);
+        continue;
+      }
+      const r = await sendMonthlyNudge(f, monthLabel, dashUrl);
+      log.push(`nudge → ${f.email} ${r && r.ok ? '✓' : '✗'}`);
+    }
+
+    console.log('[Cron/monthly-nudge]', log);
+    res.json({ ok: true, month: monthKey, nudged: log.length, actions: log });
+  } catch (err) {
+    console.error('[Cron/monthly-nudge] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
