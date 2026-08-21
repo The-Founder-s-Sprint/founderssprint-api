@@ -216,7 +216,7 @@ module.exports = async (req, res) => {
       registration_id: payReq.registration_id,
       payment_type:    payReq.payment_type,
       amount:          payReq.amount,
-      method:          'mobile_money',
+      method:          payReq.method || 'mobile_money',
       reference:       refId,
       note:            `ioTec callback — ${tx.status} (verified)`,
     });

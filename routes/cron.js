@@ -274,7 +274,7 @@ router.get('/reconcile', requireCron, async (req, res) => {
         if (rErr) { log.push(`reg update failed pr#${pr.id}: ${rErr.message}`); continue; }
         if (reg) {
           await supabase.from('payment_events').insert({ registration_id: pr.registration_id,
-            payment_type: pr.payment_type, amount: pr.amount, method: 'mobile_money',
+            payment_type: pr.payment_type, amount: pr.amount, method: pr.method || 'mobile_money',
             reference: pr.transaction_id, note: 'ioTec reconciliation (missed webhook)' });
           try { await sendPaymentConfirmation(reg, reg.cohorts, pr.payment_type); } catch (_) {}
           log.push(`reconciled ${pr.payment_type} paid → reg#${pr.registration_id}`);
