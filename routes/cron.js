@@ -367,4 +367,36 @@ router.get('/monthly-nudge', requireCron, async (req, res) => {
   }
 });
 
+// ── GET /api/cron/analytics-rollup ────────────────────────────────────────────
+// Nightly: roll raw page_views into the compact page_views_daily rollup (today +
+// yesterday in UTC, so late-arriving events are captured), then purge raw rows older
+// than the detail window. The rollup is the permanent historical record; the raw table
+// stays small and fast. Idempotent — a re-run rebuilds each day's rows.
+router.get('/analytics-rollup', requireCron, async (req, res) => {
+  const log = [];
+  try {
+    const RAW_RETENTION_DAYS = 90;
+    const now = new Date();
+    for (let i = 0; i <= 1; i++) {   // today + yesterday (UTC)
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+      const day = d.toISOString().slice(0, 10);
+      const { data, error } = await supabase.rpc('admin_rollup_page_views', { p_day: day });
+      if (error) log.push(`rollup ${day} failed: ${error.message}`);
+      else       log.push(`rolled up ${day}: ${data} rows`);
+    }
+    // Purge raw rows older than the detail window — history is preserved in the rollup.
+    const cutoff = new Date(Date.now() - RAW_RETENTION_DAYS * 86400000).toISOString();
+    const { error: delErr, count } = await supabase
+      .from('page_views').delete({ count: 'exact' }).lt('created_at', cutoff);
+    if (delErr) log.push(`purge failed: ${delErr.message}`);
+    else        log.push(`purged ${count || 0} raw rows older than ${RAW_RETENTION_DAYS}d`);
+
+    console.log('[Cron/analytics-rollup]', log);
+    res.json({ ok: true, actions: log });
+  } catch (err) {
+    console.error('[Cron/analytics-rollup] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

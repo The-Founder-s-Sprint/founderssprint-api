@@ -32,6 +32,10 @@
     {
       "path": "/api/cron/monthly-nudge",
       "schedule": "0 6 28 * *"
+    },
+    {
+      "path": "/api/cron/analytics-rollup",
+      "schedule": "30 2 * * *"
     }
   ]
 }
