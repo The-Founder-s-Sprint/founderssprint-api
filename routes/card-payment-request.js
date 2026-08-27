@@ -21,6 +21,7 @@
  */
 const { createClient } = require('@supabase/supabase-js');
 const { requestCardCollection } = require('../lib/iotec');
+const { sendHoldStarted } = require('../lib/emailer');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -70,6 +71,40 @@ module.exports = async (req, res) => {
 
   const amount = paymentType === 'deposit' ? reg.deposit_amount : reg.balance_amount;
   const cohort = reg.cohorts;
+
+  // ── Reserve the seat with a 72h hold BEFORE the card page (deposit only) ──────
+  // Same as the mobile-money path: writing hold_expires_at trips the capacity trigger,
+  // so a full cohort is rejected here (never send a payer to PegPay for a lost seat),
+  // and the later webhook deposit_paid flip can't fail on capacity.
+  const HOLD_HOURS = 72;
+  const firstHold  = paymentType === 'deposit' && !reg.deposit_paid && (!reg.held_at || !!reg.hold_lapsed_at);
+  let holdReg = reg;
+  if (paymentType === 'deposit' && !reg.deposit_paid) {
+    const nowIso      = new Date().toISOString();
+    const holdExpires = new Date(Date.now() + HOLD_HOURS * 3600 * 1000).toISOString();
+    const { data: hr, error: holdErr } = await supabase
+      .from('registrations')
+      .update({
+        hold_expires_at:     holdExpires,
+        held_at:             reg.held_at || nowIso,
+        hold_reminders_sent: 0,
+        hold_reminded_at:    null,
+        hold_lapsed_at:      null,
+        updated_at:          nowIso,
+      })
+      .eq('id', reg.id)
+      .select('*, cohorts!registrations_cohort_id_fkey(*)')
+      .maybeSingle();
+    if (holdErr) {
+      const full = /COHORT_FULL/i.test(holdErr.message || '');
+      return res.status(full ? 409 : 500).json({
+        error: full
+          ? 'That cohort just filled up — this seat is no longer available. Please choose another cohort.'
+          : 'Could not reserve your seat. Please try again.',
+      });
+    }
+    if (hr) holdReg = hr;
+  }
 
   const reference   = `FS-${paymentType.toUpperCase()}-${registrationId}`;
   const description = paymentType === 'deposit'
@@ -156,6 +191,12 @@ module.exports = async (req, res) => {
       updated_at:     new Date().toISOString(),
     })
     .eq('id', payReq.id);
+
+  // Held email — fired once per fresh hold, after ioTec returned a valid card page.
+  if (firstHold) {
+    try { await sendHoldStarted(holdReg, holdReg.cohorts); }
+    catch (e) { console.error('[card-payment-request] hold email failed:', e.message); }
+  }
 
   return res.status(200).json({
     ok:            true,

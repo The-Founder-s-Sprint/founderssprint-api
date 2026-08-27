@@ -22,6 +22,7 @@ const {
   sendMovedNotification, sendForfeitNotification, sendAdminReport,
   sendMaterialsAccess, sendPaymentConfirmation, sendBalanceGraceChoice,
   sendMonthlyNudge,
+  sendHoldReminder, sendHoldLapsed,
 } = require('../lib/emailer');
 const { checkTransactionStatus } = require('../lib/iotec');
 const { createClient } = require('@supabase/supabase-js');
@@ -397,6 +398,79 @@ router.get('/analytics-rollup', requireCron, async (req, res) => {
     console.error('[Cron/analytics-rollup] Error:', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+
+// ── Soft-hold sweep: two expiry reminders (~24h, ~3h) + lapsed release ────────
+// Runs hourly. The seat itself auto-frees the moment hold_expires_at passes (the
+// capacity count ignores expired holds), so this job only handles COMMUNICATION:
+// nudge before release, and one "your hold lapsed, rebook" note after. All writes
+// are guarded so concurrent/rerun invocations can never double-send.
+router.get('/hold-sweep', requireCron, async (req, res) => {
+  const now    = new Date();
+  const nowIso = now.toISOString();
+  const in24   = new Date(now.getTime() + 24 * 3600 * 1000).toISOString();
+  const in3    = new Date(now.getTime() +  3 * 3600 * 1000).toISOString();
+  const sel    = '*, cohorts!registrations_cohort_id_fkey(*)';
+  const out    = { reminders_24h: 0, reminders_3h: 0, lapsed: 0, errors: [] };
+
+  // Touch 2 (~3h): most urgent, processed first so a reg crossing both thresholds
+  // in one run receives the FINAL notice (sets reminders_sent=2, so touch 1 skips it).
+  try {
+    const { data } = await supabase.from('registrations').select(sel)
+      .eq('deposit_paid', false).eq('forfeited', false)
+      .not('hold_expires_at', 'is', null)
+      .gt('hold_expires_at', nowIso).lte('hold_expires_at', in3)
+      .lt('hold_reminders_sent', 2);
+    for (const r of (data || [])) {
+      try {
+        await sendHoldReminder(r, r.cohorts, 2);
+        await supabase.from('registrations')
+          .update({ hold_reminders_sent: 2, hold_reminded_at: nowIso })
+          .eq('id', r.id).lt('hold_reminders_sent', 2);
+        out.reminders_3h++;
+      } catch (e) { out.errors.push('t2 ' + r.id + ': ' + e.message); }
+    }
+  } catch (e) { out.errors.push('t2 query: ' + e.message); }
+
+  // Touch 1 (~24h): first nudge.
+  try {
+    const { data } = await supabase.from('registrations').select(sel)
+      .eq('deposit_paid', false).eq('forfeited', false)
+      .not('hold_expires_at', 'is', null)
+      .gt('hold_expires_at', nowIso).lte('hold_expires_at', in24)
+      .lt('hold_reminders_sent', 1);
+    for (const r of (data || [])) {
+      try {
+        await sendHoldReminder(r, r.cohorts, 1);
+        await supabase.from('registrations')
+          .update({ hold_reminders_sent: 1, hold_reminded_at: nowIso })
+          .eq('id', r.id).lt('hold_reminders_sent', 1);
+        out.reminders_24h++;
+      } catch (e) { out.errors.push('t1 ' + r.id + ': ' + e.message); }
+    }
+  } catch (e) { out.errors.push('t1 query: ' + e.message); }
+
+  // Lapsed: hold window passed, still unpaid, not yet emailed. Seat is already free;
+  // we keep the row as a re-bookable Interest lead (no forfeit, no delete).
+  try {
+    const { data } = await supabase.from('registrations').select(sel)
+      .eq('deposit_paid', false).eq('forfeited', false)
+      .not('hold_expires_at', 'is', null)
+      .lte('hold_expires_at', nowIso)
+      .is('hold_lapsed_at', null);
+    for (const r of (data || [])) {
+      try {
+        await sendHoldLapsed(r, r.cohorts);
+        await supabase.from('registrations')
+          .update({ hold_lapsed_at: nowIso })
+          .eq('id', r.id).is('hold_lapsed_at', null);
+        out.lapsed++;
+      } catch (e) { out.errors.push('lapse ' + r.id + ': ' + e.message); }
+    }
+  } catch (e) { out.errors.push('lapse query: ' + e.message); }
+
+  return res.json({ ok: true, ...out, at: nowIso });
 });
 
 module.exports = router;

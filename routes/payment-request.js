@@ -15,6 +15,7 @@
  */
 const { createClient } = require('@supabase/supabase-js');
 const { requestCollection, normalisePhone, detectNetwork } = require('../lib/iotec');
+const { sendHoldStarted } = require('../lib/emailer');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -68,6 +69,40 @@ module.exports = async (req, res) => {
     ? `Founder's Sprint deposit — ${cohort?.name || 'upcoming cohort'}`
     : `Founder's Sprint balance — ${cohort?.name || 'upcoming cohort'}`;
   // NOTE: ioTec's callback URL is configured per-wallet in the portal, NOT per request.
+
+  // ── Reserve the seat with a 72h hold BEFORE charging (deposit only) ───────────
+  // Writing hold_expires_at trips the cohort-capacity trigger, so a full cohort is
+  // rejected HERE — we never prompt a founder to pay for a seat that's already gone,
+  // and the later webhook deposit_paid flip can't fail on capacity (seat already counted).
+  const HOLD_HOURS = 72;
+  const firstHold  = paymentType === 'deposit' && !reg.deposit_paid && (!reg.held_at || !!reg.hold_lapsed_at);
+  let holdReg = reg;
+  if (paymentType === 'deposit' && !reg.deposit_paid) {
+    const nowIso      = new Date().toISOString();
+    const holdExpires = new Date(Date.now() + HOLD_HOURS * 3600 * 1000).toISOString();
+    const { data: hr, error: holdErr } = await supabase
+      .from('registrations')
+      .update({
+        hold_expires_at:     holdExpires,
+        held_at:             reg.held_at || nowIso,
+        hold_reminders_sent: 0,
+        hold_reminded_at:    null,
+        hold_lapsed_at:      null,
+        updated_at:          nowIso,
+      })
+      .eq('id', reg.id)
+      .select('*, cohorts!registrations_cohort_id_fkey(*)')
+      .maybeSingle();
+    if (holdErr) {
+      const full = /COHORT_FULL/i.test(holdErr.message || '');
+      return res.status(full ? 409 : 500).json({
+        error: full
+          ? 'That cohort just filled up — this seat is no longer available. Please choose another cohort.'
+          : 'Could not reserve your seat. Please try again.',
+      });
+    }
+    if (hr) holdReg = hr;
+  }
 
   // ── Check for an existing pending request (prevent double-charging) ───────────
   const { data: existing } = await supabase
@@ -140,6 +175,12 @@ module.exports = async (req, res) => {
       updated_at:     new Date().toISOString(),
     })
     .eq('id', payReq.id);
+
+  // Held email — fired once per fresh hold, after ioTec accepted the prompt.
+  if (firstHold) {
+    try { await sendHoldStarted(holdReg, holdReg.cohorts); }
+    catch (e) { console.error('[payment-request] hold email failed:', e.message); }
+  }
 
   const network = detectNetwork(phone);
 

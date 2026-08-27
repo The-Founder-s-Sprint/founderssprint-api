@@ -198,9 +198,13 @@ module.exports = async (req, res) => {
 
   // ── 6) On verified success: mark the registration paid (idempotent) ───────────
   const field = payReq.payment_type === 'deposit' ? 'deposit_paid' : 'balance_paid';
+  // On deposit confirmation, clear the 72h seat hold (the seat is now permanently paid,
+  // not merely held) so the registration's status reads 'deposit_paid' cleanly.
+  const regUpdate = { [field]: true, updated_at: new Date().toISOString() };
+  if (payReq.payment_type === 'deposit') { regUpdate.hold_expires_at = null; regUpdate.hold_lapsed_at = null; }
   const { data: reg, error: updateErr } = await supabase
     .from('registrations')
-    .update({ [field]: true, updated_at: new Date().toISOString() })
+    .update(regUpdate)
     .eq('id', payReq.registration_id)
     .eq(field, false)                 // idempotent: only if not already set (reconcile/webhook race)
     .select('*, cohorts!registrations_cohort_id_fkey(*)')
