@@ -226,6 +226,11 @@ module.exports = async (req, res) => {
     });
     try { await sendPaymentConfirmation(reg, reg.cohorts, payReq.payment_type); }
     catch (emailErr) { console.error('[iotec-webhook] Confirmation email failed:', emailErr.message); }
+    // Settle the collected payment → platform cut + coach earnings (WHT, capital recoupment, cash).
+    // Idempotent per (registration, payment_type); runs as service_role so the RPC's admin/finance
+    // gate is bypassed for the webhook. Never blocks crediting — failures are logged for reconcile.
+    try { await supabase.rpc('settle_registration_payment', { p_reg_id: payReq.registration_id, p_payment_type: payReq.payment_type }); }
+    catch (setErr) { console.error('[iotec-webhook] settlement failed (will retry via reconcile):', setErr.message); }
     console.log(`[iotec-webhook] ✓ ${payReq.payment_type} marked paid for registration#${payReq.registration_id}`);
   } else {
     console.log(`[iotec-webhook] pr#${payReq.id} success but registration already paid (reconcile beat us) — ok`);
