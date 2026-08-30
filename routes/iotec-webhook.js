@@ -17,7 +17,7 @@
  */
 const { createClient } = require('@supabase/supabase-js');
 const { verifyCallbackHeader, getTransaction } = require('../lib/iotec');
-const { sendPaymentConfirmation, sendMentorConfirmed } = require('../lib/emailer');
+const { sendPaymentConfirmation, sendMentorConfirmed, sendDirectoryRenewalConfirmation } = require('../lib/emailer');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -85,6 +85,82 @@ async function handleMentorCallback(res, { iotecId, extId }) {
   return res.status(200).json({ ok: true, status: 'success' });
 }
 
+// ── Directory renewal payment callback (externalId "FS-DIR-<renewalId>") ────────
+// Separate table (directory_renewals). Authoritative model: re-fetch the transaction,
+// guard the amount against the server-snapshotted price, then extend the listing.
+async function handleDirectoryCallback(res, { iotecId, extId }) {
+  const m = String(extId).match(/^FS-DIR-(.+)$/i);
+  let ren = null;
+  if (m) {
+    const { data } = await supabase.from('directory_renewals')
+      .select('*, provider:directory_providers(*)').eq('id', m[1]).maybeSingle();
+    ren = data;
+  }
+  if (!ren && iotecId) {
+    const { data } = await supabase.from('directory_renewals')
+      .select('*, provider:directory_providers(*)').eq('transaction_id', iotecId).maybeSingle();
+    ren = data;
+  }
+  if (!ren) {
+    console.error('[iotec-webhook] directory renewal not found for', { iotecId, extId });
+    return res.status(200).json({ ok: true, note: 'renewal not found — logged' });
+  }
+  if (ren.status === 'success') return res.status(200).json({ ok: true, note: 'Already processed' });
+
+  const refId = iotecId || ren.transaction_id;
+  if (!refId) return res.status(200).json({ ok: true, note: 'No transaction id to verify; left pending' });
+
+  let tx;
+  try { tx = await getTransaction(refId); }
+  catch (e) {
+    console.error('[iotec-webhook] directory status re-fetch failed:', e.message);
+    return res.status(200).json({ ok: true, note: 'Could not verify yet; left pending' });
+  }
+  if (!tx.terminal) return res.status(200).json({ ok: true, note: `In-flight (${tx.status}); left pending` });
+
+  const expected = Number(ren.amount);
+  let internal = tx.internal;
+  if (internal === 'success' && Number(tx.amount) !== expected) {
+    console.error('[iotec-webhook] DIRECTORY AMOUNT MISMATCH', { ren: ren.id, expected, got: tx.amount });
+    internal = 'discrepancy';   // do NOT extend — finance review
+  }
+
+  if (internal !== 'success') {
+    if (internal === 'failed') {
+      await supabase.from('directory_renewals')
+        .update({ status: 'failed', transaction_id: refId, resolved_at: new Date().toISOString() })
+        .eq('id', ren.id).neq('status', 'success');
+    }
+    return res.status(200).json({ ok: true, status: internal });
+  }
+
+  // verified success → consume the renewal (idempotent via status guard), then extend the listing
+  const nowIso = new Date().toISOString();
+  const { data: doneRen } = await supabase.from('directory_renewals')
+    .update({ status: 'success', transaction_id: refId, resolved_at: nowIso, used_at: nowIso })
+    .eq('id', ren.id).neq('status', 'success').select('*').maybeSingle();
+  if (!doneRen) return res.status(200).json({ ok: true, note: 'Renewal already applied' });
+
+  const months = ren.months || 3;
+  const newExpiry = new Date(); newExpiry.setMonth(newExpiry.getMonth() + months);
+  const { data: prov } = await supabase.from('directory_providers')
+    .update({
+      status: 'active',
+      expires_at: newExpiry.toISOString(),
+      renewal_count: ((ren.provider && ren.provider.renewal_count) || 0) + 1,
+      last_payment_at: nowIso,
+      reminder_14d_sent_at: null, reminder_3d_sent_at: null, expired_notice_sent_at: null,
+      updated_at: nowIso,
+    })
+    .eq('id', ren.provider_id).select('*').maybeSingle();
+
+  try { if (prov) await sendDirectoryRenewalConfirmation(prov, newExpiry.toISOString()); }
+  catch (e) { console.error('[iotec-webhook] directory renewed email failed:', e.message); }
+
+  console.log(`[iotec-webhook] ✓ directory renewal paid: provider ${ren.provider_id} → ${newExpiry.toISOString().slice(0, 10)}`);
+  return res.status(200).json({ ok: true, status: 'success' });
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -105,6 +181,11 @@ module.exports = async (req, res) => {
   // Mentor session payments take a separate path (their own table, not payment_requests).
   if (/^FS-MENTOR-/i.test(String(extId))) {
     return handleMentorCallback(res, { iotecId, extId });
+  }
+
+  // Directory renewals take a separate path (directory_renewals, not payment_requests).
+  if (/^FS-DIR-/i.test(String(extId))) {
+    return handleDirectoryCallback(res, { iotecId, extId });
   }
 
   // ── 2) Find the matching payment_request ──────────────────────────────────────

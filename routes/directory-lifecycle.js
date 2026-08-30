@@ -16,6 +16,21 @@ const TIER_DURATION = {
   corporate: 12,
 };
 
+const SITE_BASE = process.env.SITE_BASE_URL || 'https://founderssprint.co';
+
+// Mint a fresh renewal token for a provider and return the tokenised renew-page URL.
+// The token lives only in directory_renewals (service-role table). Returns null for free tiers.
+async function mintRenewLink(provider) {
+  const months = TIER_DURATION[provider.tier];
+  if (!months) return null;
+  try {
+    const { data } = await supabase.from('directory_renewals')
+      .insert({ provider_id: provider.id, tier: provider.tier, months })
+      .select('token').single();
+    return data ? `${SITE_BASE}/directory-renew.html?p=${provider.id}&t=${data.token}` : null;
+  } catch (e) { console.error('[directory-lifecycle] mintRenewLink:', e.message); return null; }
+}
+
 // ── GET /api/cron/directory-lifecycle ─────────────────────────────────────────
 // Runs daily. Handles three lifecycle events:
 //   1. 14-day renewal reminder
@@ -49,7 +64,8 @@ router.get('/cron/directory-lifecycle', async (req, res) => {
     for (const provider of (due14d || [])) {
       if (!provider.email) continue;
       try {
-        await sendDirectoryReminder(provider, '14d');
+        const link = await mintRenewLink(provider);
+        await sendDirectoryReminder(provider, '14d', link);
         await supabase
           .from('directory_providers')
           .update({ reminder_14d_sent_at: new Date().toISOString() })
@@ -73,7 +89,8 @@ router.get('/cron/directory-lifecycle', async (req, res) => {
     for (const provider of (due3d || [])) {
       if (!provider.email) continue;
       try {
-        await sendDirectoryReminder(provider, '3d');
+        const link = await mintRenewLink(provider);
+        await sendDirectoryReminder(provider, '3d', link);
         await supabase
           .from('directory_providers')
           .update({ reminder_3d_sent_at: new Date().toISOString() })
@@ -104,7 +121,8 @@ router.get('/cron/directory-lifecycle', async (req, res) => {
 
         // Send expired notice with renewal link (if not already sent)
         if (provider.email && !provider.expired_notice_sent_at) {
-          await sendDirectoryExpired(provider);
+          const link = await mintRenewLink(provider);
+          await sendDirectoryExpired(provider, link);
           await supabase
             .from('directory_providers')
             .update({ expired_notice_sent_at: now })
@@ -125,58 +143,9 @@ router.get('/cron/directory-lifecycle', async (req, res) => {
   }
 });
 
-// ── POST /api/directory/renew ────────────────────────────────────────────────
-// Called when a provider clicks "Renew" in their reminder email.
-// Phase 1: generates a renewal record. Phase 2: triggers ioTec payment.
-router.post('/directory/renew', async (req, res) => {
-  const { providerId } = req.body;
-  if (!providerId) return res.status(400).json({ error: 'Missing providerId' });
-
-  const { data: provider, error } = await supabase
-    .from('directory_providers')
-    .select('*')
-    .eq('id', providerId)
-    .single();
-
-  if (error || !provider) {
-    return res.status(404).json({ error: 'Provider not found' });
-  }
-
-  const duration = TIER_DURATION[provider.tier];
-  if (!duration) {
-    return res.status(400).json({ error: 'Basic listings do not require renewal' });
-  }
-
-  // Calculate new expiry from today (not from old expiry — no gap penalty)
-  const newExpiry = new Date();
-  newExpiry.setMonth(newExpiry.getMonth() + duration);
-
-  // TODO: When ioTec is connected, generate payment link here instead of auto-renewing
-  // For now: auto-renew (manual payment confirmation via dashboard)
-  const { error: updateErr } = await supabase
-    .from('directory_providers')
-    .update({
-      status: 'active',
-      expires_at: newExpiry.toISOString(),
-      renewal_count: (provider.renewal_count || 0) + 1,
-      last_payment_at: new Date().toISOString(),
-      // Reset reminder flags for next cycle
-      reminder_14d_sent_at: null,
-      reminder_3d_sent_at: null,
-      expired_notice_sent_at: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', providerId);
-
-  if (updateErr) {
-    return res.status(500).json({ error: 'Renewal failed: ' + updateErr.message });
-  }
-
-  return res.json({
-    ok: true,
-    message: `Listing renewed for ${duration} months`,
-    new_expires_at: newExpiry.toISOString(),
-  });
-});
+// NOTE: POST /api/directory/renew is now PAYMENT-GATED and lives in routes/directory-renew.js
+// (priced server-side from the traffic-band rate card, charged via ioTec, extended by the
+// webhook). The old auto-renew handler that used to live here was removed on 30 Aug 2026 —
+// it activated a listing WITHOUT payment, which the payment-gated flow supersedes.
 
 module.exports = router;

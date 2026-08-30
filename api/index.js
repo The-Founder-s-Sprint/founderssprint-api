@@ -18,6 +18,7 @@ const courseMaterialRoutes    = require('../routes/course-materials');
 const waitlistRoutes          = require('../routes/waitlist');
 const rsvpRoutes              = require('../routes/rsvp');
 const directoryLifecycleRoutes = require('../routes/directory-lifecycle');
+const directoryRenewRoutes     = require('../routes/directory-renew');
 const staffRoutes              = require('../routes/staff');
 const testimonialRoutes        = require('../routes/testimonial');
 const mentorRecommendationRoutes = require('../routes/mentor-recommendation');
@@ -127,6 +128,10 @@ app.use('/api/investor-application',  strictLimiter);
 app.use('/api/grace',                 strictLimiter);
 app.use('/api/express',               strictLimiter);
 
+// Directory renewal (payment-gated). Charge endpoint behind the payment limiter; the
+// renew router is mounted BEFORE directory-lifecycle so its /directory/renew wins.
+app.use('/api/directory/renew',   paymentLimiter);
+app.use('/api',                   directoryRenewRoutes);
 app.use('/api',                   registerRoutes);
 app.use('/api/admin',             adminRoutes);
 app.use('/api/cron',              cronRoutes);
