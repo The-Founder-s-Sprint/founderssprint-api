@@ -5,6 +5,7 @@ on:
     - cron: '0 * * * *'
     - cron: '0 2 * * *'
     - cron: '0 6 28 * *'
+    - cron: '0 7 1 * *'
   workflow_dispatch: {}
 
 jobs:
@@ -30,3 +31,8 @@ jobs:
         if: github.event.schedule == '0 6 28 * *' || github.event_name == 'workflow_dispatch'
         run: |
           curl -fsS --retry 2 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "$BASE/api/cron/monthly-nudge"
+
+      - name: Monthly coach digest
+        if: github.event.schedule == '0 7 1 * *' || github.event_name == 'workflow_dispatch'
+        run: |
+          curl -fsS --retry 2 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "$BASE/api/cron/coach-digest"
