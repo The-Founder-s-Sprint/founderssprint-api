@@ -23,6 +23,7 @@ const {
   sendMaterialsAccess, sendPaymentConfirmation, sendBalanceGraceChoice,
   sendMonthlyNudge,
   sendHoldReminder, sendHoldLapsed,
+  sendCoachMonthlyDigest,
 } = require('../lib/emailer');
 const { checkTransactionStatus } = require('../lib/iotec');
 const { createClient } = require('@supabase/supabase-js');
@@ -471,6 +472,46 @@ router.get('/hold-sweep', requireCron, async (req, res) => {
   } catch (e) { out.errors.push('lapse query: ' + e.message); }
 
   return res.json({ ok: true, ...out, at: nowIso });
+});
+
+// ── GET /api/cron/coach-digest ────────────────────────────────────────────────
+// Monthly founders' digest — platform summary + a per-coach section — to the founding
+// coaches. Runs on the 1st for the PREVIOUS calendar month. Idempotent via digest_runs
+// (re-runs skip unless ?force=1). coach_digest_data is granted to service_role only.
+router.get('/coach-digest', requireCron, async (req, res) => {
+  try {
+    const now   = new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)); // prev month start
+    const end   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));      // this month start
+    const periodStart = start.toISOString().slice(0, 10);
+    const monthLabel  = start.toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+    if (!req.query.force) {
+      const { data: existing } = await supabase
+        .from('digest_runs').select('id').eq('kind', 'coach_monthly').eq('period_start', periodStart).maybeSingle();
+      if (existing) return res.json({ ok: true, skipped: 'already sent', period: periodStart });
+    }
+
+    const { data: digest, error } = await supabase.rpc('coach_digest_data', {
+      p_start: start.toISOString(), p_end: end.toISOString(),
+    });
+    if (error) throw error;
+
+    let sent = 0; const errors = [];
+    for (const coach of (digest.coaches || [])) {
+      if (!coach.email) continue;
+      try { await sendCoachMonthlyDigest(coach, digest, monthLabel); sent++; }
+      catch (e) { errors.push(`${coach.email}: ${e.message}`); }
+    }
+    await supabase.from('digest_runs')
+      .upsert({ kind: 'coach_monthly', period_start: periodStart, recipients: sent, sent_at: new Date().toISOString() },
+              { onConflict: 'kind,period_start' });
+
+    return res.json({ ok: true, period: periodStart, month: monthLabel, sent, errors });
+  } catch (err) {
+    console.error('[Cron/coach-digest]', err);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
