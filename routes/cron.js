@@ -21,6 +21,7 @@ const {
   sendReminder14d, sendReminder7d, sendReminder96h,
   sendMovedNotification, sendForfeitNotification, sendAdminReport,
   sendMaterialsAccess, sendPaymentConfirmation, sendBalanceGraceChoice,
+  sendFinancePaymentRecord,
   sendMonthlyNudge,
   sendHoldReminder, sendHoldLapsed,
   sendCoachMonthlyDigest,
@@ -279,6 +280,7 @@ router.get('/reconcile', requireCron, async (req, res) => {
             payment_type: pr.payment_type, amount: pr.amount, method: pr.method || 'mobile_money',
             reference: pr.transaction_id, note: 'ioTec reconciliation (missed webhook)' });
           try { await sendPaymentConfirmation(reg, reg.cohorts, pr.payment_type); } catch (_) {}
+          try { await sendFinancePaymentRecord(reg, reg.cohorts, pr.payment_type, { method: pr.method, reference: pr.transaction_id }); } catch (_) {}
           log.push(`reconciled ${pr.payment_type} paid → reg#${pr.registration_id}`);
         } else {
           log.push(`pr#${pr.id} success but already marked (webhook beat us) — ok`);

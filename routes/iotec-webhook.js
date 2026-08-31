@@ -17,7 +17,7 @@
  */
 const { createClient } = require('@supabase/supabase-js');
 const { verifyCallbackHeader, getTransaction } = require('../lib/iotec');
-const { sendPaymentConfirmation, sendMentorConfirmed, sendDirectoryRenewalConfirmation } = require('../lib/emailer');
+const { sendPaymentConfirmation, sendMentorConfirmed, sendDirectoryRenewalConfirmation, sendFinancePaymentRecord } = require('../lib/emailer');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -307,6 +307,9 @@ module.exports = async (req, res) => {
     });
     try { await sendPaymentConfirmation(reg, reg.cohorts, payReq.payment_type); }
     catch (emailErr) { console.error('[iotec-webhook] Confirmation email failed:', emailErr.message); }
+    // Finance record copy for accounting (record-keeping until QuickBooks Online is connected).
+    try { await sendFinancePaymentRecord(reg, reg.cohorts, payReq.payment_type, { method: payReq.method, reference: refId }); }
+    catch (finErr) { console.error('[iotec-webhook] Finance record email failed:', finErr.message); }
     // Settle the collected payment → platform cut + coach earnings (WHT, capital recoupment, cash).
     // Idempotent per (registration, payment_type); runs as service_role so the RPC's admin/finance
     // gate is bypassed for the webhook. Never blocks crediting — failures are logged for reconcile.
