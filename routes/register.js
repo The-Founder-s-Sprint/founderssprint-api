@@ -6,6 +6,7 @@ const {
 } = require('../lib/db');
 const { validateSpecialties } = require('../lib/taxonomy');
 const { sendConfirmation, sendReservationConfirmation, sendNewRegistrationAdmin } = require('../lib/emailer');
+const { supabase } = require('../lib/db');
 
 // ── POST /api/register ────────────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
@@ -204,6 +205,37 @@ router.patch('/payment/balance', async (req, res) => {
     res.json({ ok: true, registration: reg });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/payment-status?ref=FS-DEPOSIT-<id> ───────────────────────────────
+// Public + PII-free. Lets the card-return page poll the REAL outcome so a declined
+// card never shows a success screen. Returns only a coarse state string:
+//   paid | failed | pending | unknown  (no names, amounts, or emails).
+// The `ref` is the payer's own booking reference; low-sensitivity, rate-limited by
+// the global limiter. (Flag: swap to a per-payment token if enumeration matters at scale.)
+router.get('/payment-status', async (req, res) => {
+  const ref = String(req.query.ref || '');
+  const m = ref.match(/^FS-(DEPOSIT|BALANCE)-(\d+)$/i);
+  if (!m) return res.status(400).json({ error: 'Invalid reference' });
+  const paymentType = m[1].toLowerCase() === 'deposit' ? 'deposit' : 'balance';
+  const regId = parseInt(m[2], 10);
+  try {
+    const { data: reg } = await supabase
+      .from('registrations').select('deposit_paid, balance_paid').eq('id', regId).maybeSingle();
+    if (!reg) return res.json({ state: 'unknown' });
+    const paid = paymentType === 'deposit' ? reg.deposit_paid : reg.balance_paid;
+    if (paid) return res.json({ state: 'paid' });
+    const { data: pr } = await supabase
+      .from('payment_requests').select('status')
+      .eq('registration_id', regId).eq('payment_type', paymentType)
+      .order('initiated_at', { ascending: false }).limit(1).maybeSingle();
+    const s = pr && pr.status;
+    if (s === 'failed' || s === 'discrepancy') return res.json({ state: 'failed' });
+    return res.json({ state: 'pending' });
+  } catch (e) {
+    console.error('[payment-status]', e.message);
+    return res.json({ state: 'pending' });
   }
 });
 
