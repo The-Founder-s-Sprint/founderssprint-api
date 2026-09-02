@@ -103,12 +103,23 @@ const paymentLimiter = rateLimit({
   message: { error: 'Too many payment requests, please try again later.' },
 });
 
+// Booking email-availability check: generous enough for shared Ugandan IPs (several
+// founders behind one connection) yet caps bulk account-enumeration to 20/min/IP.
+const checkEmailLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) =>
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 );
 
 // ── Routes (strict rate limits on public endpoints) ──────────────────────────
+app.use('/api/check-email',       checkEmailLimiter);
 app.use('/api/register',          strictLimiter);
 app.use('/api/waitlist',          strictLimiter);
 app.use('/api/rsvp',             strictLimiter);

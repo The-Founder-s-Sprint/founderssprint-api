@@ -239,4 +239,25 @@ router.get('/payment-status', async (req, res) => {
   }
 });
 
+// ── GET /api/check-email?email=… ─────────────────────────────────────────────
+// Booking uses this to route an existing account to sign-in instead of letting a
+// second "account" be created for the same email. Returns ONLY { exists:bool }.
+// Enumeration note: this is the one endpoint that confirms an email is registered;
+// it's rate-limited (checkEmailLimiter, 20/min/IP) and calls a service-role-only RPC
+// (email_exists is revoked from anon/authenticated, so it can't be probed via /sb).
+// Fails OPEN (exists:false) so a check outage never blocks bookings — the server-side
+// account guard still refuses to reset an existing account's password.
+router.get('/check-email', async (req, res) => {
+  const email = String(req.query.email || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'A valid email is required' });
+  try {
+    const { data, error } = await supabase.rpc('email_exists', { p_email: email });
+    if (error) throw error;
+    return res.json({ exists: !!data });
+  } catch (e) {
+    console.error('[check-email]', e.message);
+    return res.json({ exists: false });
+  }
+});
+
 module.exports = router;
