@@ -30,6 +30,7 @@ const directoryApplicationRoutes = require('../routes/directory-application');
 const investorApplicationRoutes  = require('../routes/investor-application');
 const graceRoutes                = require('../routes/grace');
 const expressRoutes              = require('../routes/express');
+const corporateRoutes            = require('../routes/corporate');
 
 const app = express();
 
@@ -148,6 +149,7 @@ app.post('/api/directory-application', directoryApplicationRoutes);
 app.post('/api/investor-application',  investorApplicationRoutes);
 app.use('/api/grace',                  graceRoutes);
 app.use('/api/express',                expressRoutes);
+app.use('/api/corporate',              corporateRoutes);
 app.use('/api/materials',         materialsRoutes);
 app.use('/api',                   coachApplicationRoutes);
 app.use('/api/sessions',          sessionRoutes);
