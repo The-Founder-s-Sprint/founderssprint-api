@@ -280,4 +280,87 @@ router.post('/invite-client', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// STANDARD PLATFORM DOCUMENTS (the counsel-approved mutual NDA, etc.)
+// Uploaded ONCE and reused for every engagement, versioned so a client stays
+// anchored to the exact text they signed. Admin/finance only — these are the
+// documents clients are asked to sign, so write access is the tightest we have.
+// ═══════════════════════════════════════════════════════════════════════════
+const DOC_KEYS = ['mutual_nda', 'engagement_letter'];
+
+// POST /platform-doc/upload-url → signed upload URL for the next version
+router.post('/platform-doc/upload-url', async (req, res) => {
+  const user = await authUser(req, res); if (!user) return;
+  if (!(await isCorpStaff(user.id))) return res.status(403).json({ error: 'Admin or finance only' });
+
+  const b = req.body || {};
+  const docKey = DOC_KEYS.includes(b.doc_key) ? b.doc_key : '';
+  const contentType = String(b.contentType || '').toLowerCase().trim();
+  const size = Number(b.size || 0);
+
+  if (!docKey) return res.status(400).json({ error: 'Unknown document type' });
+  if (!EXT[contentType]) return res.status(400).json({ error: 'Unsupported file type' });
+  if (!(size > 0) || size > MAX_BYTES) return res.status(400).json({ error: 'File too large (max 25MB)' });
+
+  // Next version number = highest on file + 1.
+  const { data: top } = await supabase.from('platform_documents')
+    .select('version').eq('doc_key', docKey).order('version', { ascending: false }).limit(1);
+  const version = ((top && top[0] && top[0].version) || 0) + 1;
+
+  // Random suffix so a re-upload of the same version can never overwrite a file
+  // that an already-signed contract still points at.
+  const path = `_platform/${docKey}/v${version}-${crypto.randomBytes(6).toString('hex')}.${EXT[contentType]}`;
+
+  const { data, error } = await supabase.storage.from(DD_BUCKET).createSignedUploadUrl(path);
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json({ signedUrl: data.signedUrl, token: data.token, path, bucket: DD_BUCKET, version });
+});
+
+// POST /platform-doc/commit → record the uploaded file as the current version
+router.post('/platform-doc/commit', async (req, res) => {
+  const user = await authUser(req, res); if (!user) return;
+  if (!(await isCorpStaff(user.id))) return res.status(403).json({ error: 'Admin or finance only' });
+
+  const b = req.body || {};
+  const docKey = DOC_KEYS.includes(b.doc_key) ? b.doc_key : '';
+  const storagePath = String(b.storage_path || '');
+  const version = Number(b.version || 0);
+  const title = String(b.title || '').trim().slice(0, 200);
+  const notes = String(b.notes || '').trim().slice(0, 1000) || null;
+
+  if (!docKey || !storagePath || !(version > 0)) return res.status(400).json({ error: 'doc_key, storage_path and version are required' });
+  // Only ever accept a path this endpoint could have minted.
+  if (!storagePath.startsWith(`_platform/${docKey}/`)) return res.status(400).json({ error: 'Invalid storage path' });
+
+  // Confirm the file actually landed before we mark it current — otherwise a
+  // failed upload would retire the previous version and leave us with nothing.
+  const { data: head } = await supabase.storage.from(DD_BUCKET)
+    .list(`_platform/${docKey}`, { search: storagePath.split('/').pop() });
+  if (!head || !head.length) return res.status(400).json({ error: 'Upload not found in storage — try again' });
+
+  const { data, error } = await supabase.from('platform_documents').insert({
+    doc_key: docKey, version, title: title || `Mutual NDA v${version}`,
+    bucket: DD_BUCKET, storage_path: storagePath, notes,
+    is_current: true, uploaded_by: user.id,
+  }).select().single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json({ ok: true, document: data });
+});
+
+// GET /platform-doc/url?id= → short-lived signed download URL (staff preview)
+router.get('/platform-doc/url', async (req, res) => {
+  const user = await authUser(req, res); if (!user) return;
+  if (!(await isCorpStaff(user.id))) return res.status(403).json({ error: 'Admin or finance only' });
+
+  const { data: doc } = await supabase.from('platform_documents')
+    .select('bucket,storage_path').eq('id', String(req.query.id || '')).maybeSingle();
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+
+  const { data, error } = await supabase.storage.from(doc.bucket || DD_BUCKET)
+    .createSignedUrl(doc.storage_path, DOWNLOAD_TTL);
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json({ url: data.signedUrl });
+});
+
 module.exports = router;
