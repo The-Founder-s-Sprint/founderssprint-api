@@ -32,7 +32,7 @@
 const express = require('express');
 const router  = express.Router();
 const { supabase } = require('../lib/db');
-const { createMeetSession } = require('../lib/google-calendar');
+const { createMeetSession, cancelMeetSession, listEvents } = require('../lib/google-calendar');
 
 // The locked cohort map (CLAUDE.md). Weekday is ISO: 1 = Monday.
 const DEFAULT_DAYS = [
@@ -126,15 +126,18 @@ router.post('/generate', requireStaff, async (req, res) => {
       const coach = coachFor[d.discipline];
       if (!coach) { problems.push(`No lead coach found for discipline "${d.discipline}"`); continue; }
       if (!coach.email) { problems.push(`Lead coach for "${d.discipline}" has no email on file`); continue; }
+      // sessions.coach_id is a UUID = coaches.user_id, NOT the integer coaches.id.
+      if (!coach.user_id) { problems.push(`Lead coach for "${d.discipline}" has no linked login (user_id) — cannot own a session`); continue; }
       const startsAt = eatDateTime(cohort.start_date, d.weekday, w, d.time || '10:00');
-      const key = `${coach.id}|${new Date(startsAt).toISOString()}`;
+      const key = `${coach.user_id}|${new Date(startsAt).toISOString()}`;
       plan.push({
         week: w + 1,
         discipline: d.discipline,
         title: `${cohort.name} · ${LABELS[d.discipline] || d.discipline} — Week ${w + 1}`,
         coach: [coach.first_name, coach.last_name].filter(Boolean).join(' ') || coach.email,
         coach_email: coach.email,
-        coach_id: coach.id,
+        coach_id: coach.user_id,   // UUID, matches sessions.coach_id
+        coach_pk: coach.id,
         starts_at_eat: startsAt,
         duration_minutes: duration,
         skip: seen.has(key),
@@ -174,7 +177,14 @@ router.post('/generate', requireStaff, async (req, res) => {
         duration_minutes: p.duration_minutes, meet_link: meet.meetLink,
         calendar_event_id: meet.calendarEventId, status: 'scheduled', cohort_id: cohortId,
       }).select().single();
-      if (sErr) throw new Error(sErr.message);
+      if (sErr) {
+        // The Google event already exists at this point. Without this rollback a DB
+        // failure silently orphans it on the delegate calendar — and because the
+        // skip-check reads the sessions table, a re-run would create ANOTHER copy.
+        try { await cancelMeetSession(meet.calendarEventId); }
+        catch (delErr) { console.error('[cohort-schedule] orphan cleanup failed for', meet.calendarEventId, delErr.message); }
+        throw new Error(sErr.message);
+      }
 
       await supabase.from('session_attendees')
         .insert(founders.map(f => ({ session_id: sess.id, email: f.email, name: f.name || null })));
@@ -192,6 +202,58 @@ router.post('/generate', requireStaff, async (req, res) => {
     invited: founders.map(f => f.email),
     sessions: created, errors: failed,
   });
+});
+
+
+// ── POST /cleanup-orphans ────────────────────────────────────────────────────
+// Deletes calendar events created for a cohort that have NO matching `sessions`
+// row — the debris left when generation created the Google event and then failed
+// on the database write. They are invisible to the app but sit on real calendars,
+// and because the skip-check reads `sessions`, a re-run would duplicate them.
+//
+// Dry-run by default. Only ever touches events whose title matches this cohort.
+router.post('/cleanup-orphans', requireStaff, async (req, res) => {
+  const cohortId = Number((req.body || {}).cohort_id);
+  const dryRun = (req.body || {}).dry_run !== false;
+  if (!cohortId) return res.status(400).json({ error: 'cohort_id is required' });
+
+  const { data: cohort } = await supabase.from('cohorts').select('*').eq('id', cohortId).maybeSingle();
+  if (!cohort) return res.status(404).json({ error: 'Cohort not found' });
+
+  try {
+    // Window: the cohort's own span, padded a day either side.
+    const from = new Date(new Date(cohort.start_date + 'T00:00:00+03:00').getTime() - 86400000);
+    const to   = new Date(new Date((cohort.end_date || cohort.start_date) + 'T23:59:59+03:00').getTime() + 86400000);
+
+    const events = await listEvents({ timeMin: from, timeMax: to, query: cohort.name });
+
+    // Anything we legitimately own is recorded with its calendar_event_id.
+    const { data: known } = await supabase.from('sessions')
+      .select('calendar_event_id').eq('cohort_id', cohortId);
+    const kept = new Set((known || []).map(k => k.calendar_event_id).filter(Boolean));
+
+    const orphans = events.filter(e =>
+      e.status !== 'cancelled' &&
+      e.summary.includes(cohort.name) &&
+      !kept.has(e.id));
+
+    if (dryRun) {
+      return res.json({ dry_run: true, cohort: cohort.name, found: events.length,
+                        tracked: kept.size, orphans: orphans.length,
+                        will_delete: orphans.map(o => ({ id: o.id, summary: o.summary, start: o.start })) });
+    }
+
+    const deleted = [], failed = [];
+    for (const o of orphans) {
+      try { await cancelMeetSession(o.id); deleted.push(o.summary + ' @ ' + o.start); }
+      catch (e) { failed.push({ summary: o.summary, error: e.message }); }
+    }
+    return res.json({ ok: failed.length === 0, cohort: cohort.name,
+                      deleted: deleted.length, failed: failed.length, errors: failed });
+  } catch (err) {
+    console.error('[cohort-schedule/cleanup-orphans]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

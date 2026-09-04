@@ -515,8 +515,9 @@ router.get('/session-reminders', requireCron, async (req, res) => {
       // Attendees recorded on the session, plus the coach.
       const { data: atts } = await supabase.from('session_attendees')
         .select('email, name').eq('session_id', s.id);
+      // sessions.coach_id is the coach's auth UUID (coaches.user_id), NOT coaches.id.
       const { data: coach } = await supabase.from('coaches')
-        .select('email, first_name').eq('id', s.coach_id).maybeSingle();
+        .select('email, first_name').eq('user_id', s.coach_id).maybeSingle();
 
       const targets = [
         ...(atts || []).map(a => ({ to: a.email, name: a.name, isCoach: false })),
