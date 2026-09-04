@@ -7,6 +7,7 @@ const registerRoutes        = require('../routes/register');
 const adminRoutes           = require('../routes/admin');
 const cronRoutes            = require('../routes/cron');
 const confirmPaymentRoutes  = require('../routes/confirm-payment');
+const resendJourneyRoutes   = require('../routes/resend-journey');
 const paymentRequestRoutes  = require('../routes/payment-request');
 const cardPaymentRequestRoutes = require('../routes/card-payment-request');
 const iotecWebhookRoutes    = require('../routes/iotec-webhook');
@@ -128,6 +129,7 @@ app.use('/api/coach-upload',      strictLimiter);
 app.use('/api/payment-request',   paymentLimiter);
 app.use('/api/card-payment-request', paymentLimiter);
 app.use('/api/confirm-payment',   paymentLimiter);
+app.use('/api/resend-journey',    paymentLimiter);   // admin-gated, but rate-limit outbound mail anyway
 app.use('/api/testimonial',       strictLimiter);
 app.use('/api/mentor-recommendation', strictLimiter);
 // Public write surfaces moved off the browser→Supabase direct path so they sit
@@ -148,6 +150,7 @@ app.use('/api',                   registerRoutes);
 app.use('/api/admin',             adminRoutes);
 app.use('/api/cron',              cronRoutes);
 app.post('/api/confirm-payment',  confirmPaymentRoutes);
+app.post('/api/resend-journey',   resendJourneyRoutes);
 app.post('/api/payment-request',  paymentRequestRoutes);
 app.post('/api/card-payment-request', cardPaymentRequestRoutes);
 app.post('/api/iotec/webhook',    iotecWebhookRoutes);
