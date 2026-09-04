@@ -19,6 +19,14 @@ jobs:
         run: |
           curl -fsS --retry 2 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "$BASE/api/cron/hold-sweep"
 
+      # Session reminders ride the existing hourly slot - no new schedule needed.
+      # Emails each session's founders + coach once, ~72h before it starts, so a
+      # generated cohort drips one notice per session instead of 25 invites at once.
+      - name: Hourly session reminders (72h before each session)
+        if: github.event.schedule == '0 * * * *' || github.event_name == 'workflow_dispatch'
+        run: |
+          curl -fsS --retry 2 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "$BASE/api/cron/session-reminders"
+
       - name: Daily batch
         if: github.event.schedule == '0 2 * * *' || github.event_name == 'workflow_dispatch'
         run: |
