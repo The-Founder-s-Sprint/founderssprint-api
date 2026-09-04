@@ -72,6 +72,28 @@ module.exports = async (req, res) => {
     note:            note || null,
   });
 
+  // Book the settlement (80/20 split + coach earnings).
+  // The ioTec webhook does this for online payments; without it here, an offline
+  // payment marks the founder paid but the coach's share is never booked — the
+  // money silently vanishes from coach earnings and the platform cut.
+  // settle_registration_payment is idempotent (returns the existing settlement
+  // for the same registration+payment_type), so a retry can't double-book.
+  // NOTE: supabase.rpc() RESOLVES with { error } on a DB error — it does not throw.
+  // Check the returned error explicitly; a bare try/catch here would silently pass.
+  let settled = true;
+  try {
+    const { error: setErr } = await supabase.rpc('settle_registration_payment', {
+      p_reg_id: registrationId,
+      p_payment_type: paymentType,
+    });
+    if (setErr) { settled = false; console.error('[confirm-payment] settlement failed:', setErr.message); }
+  } catch (thrown) {
+    settled = false;
+    console.error('[confirm-payment] settlement threw:', thrown.message);
+  }
+  // Don't fail the request — the payment IS confirmed; settlement can be re-run.
+  // `settled` is surfaced in the response so the dashboard can warn finance.
+
   // Send payment confirmation email
   try {
     await sendPaymentConfirmation(reg, reg.cohorts, paymentType);
@@ -82,6 +104,8 @@ module.exports = async (req, res) => {
 
   return res.status(200).json({
     ok: true,
-    message: `${paymentType} marked as paid for registration #${registrationId}`,
+    settled,
+    message: `${paymentType} marked as paid for registration #${registrationId}`
+      + (settled ? '' : ' — WARNING: settlement not booked, tell finance to re-run it'),
   });
 };

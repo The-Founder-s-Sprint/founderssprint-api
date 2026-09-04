@@ -313,8 +313,12 @@ module.exports = async (req, res) => {
     // Settle the collected payment → platform cut + coach earnings (WHT, capital recoupment, cash).
     // Idempotent per (registration, payment_type); runs as service_role so the RPC's admin/finance
     // gate is bypassed for the webhook. Never blocks crediting — failures are logged for reconcile.
-    try { await supabase.rpc('settle_registration_payment', { p_reg_id: payReq.registration_id, p_payment_type: payReq.payment_type }); }
-    catch (setErr) { console.error('[iotec-webhook] settlement failed (will retry via reconcile):', setErr.message); }
+    // supabase.rpc() RESOLVES with { error } on a DB error — it does NOT throw, so the
+    // catch alone would swallow every settlement failure silently. Check `error` too.
+    try {
+      const { error: setErr } = await supabase.rpc('settle_registration_payment', { p_reg_id: payReq.registration_id, p_payment_type: payReq.payment_type });
+      if (setErr) console.error('[iotec-webhook] settlement failed (will retry via reconcile):', setErr.message);
+    } catch (thrown) { console.error('[iotec-webhook] settlement threw (will retry via reconcile):', thrown.message); }
     console.log(`[iotec-webhook] ✓ ${payReq.payment_type} marked paid for registration#${payReq.registration_id}`);
   } else {
     console.log(`[iotec-webhook] pr#${payReq.id} success but registration already paid (reconcile beat us) — ok`);
