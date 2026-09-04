@@ -17,7 +17,7 @@
  */
 const { createClient } = require('@supabase/supabase-js');
 const {
-  sendConfirmation, sendNewRegistrationAdmin, sendPaymentConfirmation,
+  sendConfirmation, sendNewRegistrationAdmin, sendPaymentConfirmation, sendCohortSchedule,
 } = require('../lib/emailer');
 
 const supabase = createClient(
@@ -25,7 +25,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const ALLOWED = ['confirmation', 'admin', 'payment_deposit', 'payment_balance'];
+const ALLOWED = ['confirmation', 'admin', 'payment_deposit', 'payment_balance', 'schedule'];
 
 async function isAuthorised(req) {
   const adminSecret = process.env.ADMIN_SECRET;
@@ -71,7 +71,17 @@ module.exports = async (req, res) => {
   const results = {};
   for (const kind of wanted) {
     try {
-      if (kind === 'confirmation')      await sendConfirmation(reg, reg.cohorts);
+      if (kind === 'schedule') {
+        // The whole programme in one email — a founder should see the shape of the
+        // five weeks, not assemble it from 25 separate reminders.
+        const { data: sessions } = await supabase.from('sessions')
+          .select('title, scheduled_at, duration_minutes')
+          .eq('cohort_id', reg.cohort_id).eq('status', 'scheduled')
+          .order('scheduled_at', { ascending: true });
+        if (!sessions || !sessions.length) throw new Error('no sessions scheduled for this cohort yet');
+        await sendCohortSchedule(reg, reg.cohorts, sessions);
+      }
+      else if (kind === 'confirmation') await sendConfirmation(reg, reg.cohorts);
       else if (kind === 'admin')        await sendNewRegistrationAdmin(reg, reg.cohorts);
       else if (kind === 'payment_deposit') await sendPaymentConfirmation(reg, reg.cohorts, 'deposit');
       else if (kind === 'payment_balance') await sendPaymentConfirmation(reg, reg.cohorts, 'balance');
