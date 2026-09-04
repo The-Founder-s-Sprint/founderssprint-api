@@ -2,8 +2,12 @@
  * POST /api/cohort-schedule/generate
  *
  * Generates a whole cohort's session series in one action — 5 disciplines ×
- * N weeks — each with a Google Meet link, and Google emails every attendee the
- * invite (createMeetSession uses sendUpdates=all).
+ * N weeks — each with a Google Meet link.
+ *
+ * Events are created SILENTLY (sendUpdates=none): they appear on every attendee's
+ * calendar straight away, but no invitation emails are sent. Blasting 25 invites at
+ * once is torture for the recipient. Notification is handled instead by the 72h-before
+ * reminder cron (/api/cron/session-reminders), one email per session.
  *
  * Scheduling a cohort one session at a time through the ops form is 25 trips,
  * which is how a cohort starts on Monday with nothing in the calendar.
@@ -159,6 +163,9 @@ router.post('/generate', requireStaff, async (req, res) => {
         description: `${LABELS[p.discipline] || p.discipline} · Week ${p.week} of ${weeks}.`,
         startTime: p.starts_at_eat,
         durationMinutes: p.duration_minutes,
+        // Silent create. The event lands on every calendar immediately, but nobody
+        // gets 25 invitation emails at once. Notification is the 72h reminder cron.
+        notify: 'none',
       });
       const { data: sess, error: sErr } = await supabase.from('sessions').insert({
         coach_id: p.coach_id, session_type: 'group', title: p.title,

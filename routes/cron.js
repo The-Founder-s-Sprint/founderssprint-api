@@ -23,6 +23,7 @@ const {
   sendMaterialsAccess, sendPaymentConfirmation, sendBalanceGraceChoice,
   sendFinancePaymentRecord,
   sendMonthlyNudge,
+  sendSessionReminder,
   sendHoldReminder, sendHoldLapsed,
   sendCoachMonthlyDigest,
 } = require('../lib/emailer');
@@ -480,6 +481,74 @@ router.get('/hold-sweep', requireCron, async (req, res) => {
 // Monthly founders' digest — platform summary + a per-coach section — to the founding
 // coaches. Runs on the 1st for the PREVIOUS calendar month. Idempotent via digest_runs
 // (re-runs skip unless ?force=1). coach_digest_data is granted to service_role only.
+
+// ── GET /api/cron/session-reminders ──────────────────────────────────────────
+// One email per session, ~72h before it starts, to the founders AND the coach.
+//
+// Cohort sessions are created SILENTLY (no Google invitation blast), so this is
+// the notification people actually receive. Runs hourly; each session is reminded
+// exactly once (reminder_sent_at), so a re-run or an overlapping cron cannot
+// double-send. Sessions already inside the window when generated still get one
+// reminder on the next run rather than being skipped.
+router.get('/session-reminders', requireCron, async (req, res) => {
+  const WINDOW_H = Number(req.query.hours) || 72;
+  const now = new Date();
+  const cutoff = new Date(now.getTime() + WINDOW_H * 3600 * 1000);
+
+  try {
+    const { data: due, error } = await supabase
+      .from('sessions')
+      .select('id, title, scheduled_at, duration_minutes, meet_link, coach_id, cohort_id')
+      .eq('status', 'scheduled')
+      .is('reminder_sent_at', null)
+      .gt('scheduled_at', now.toISOString())
+      .lte('scheduled_at', cutoff.toISOString())
+      .order('scheduled_at', { ascending: true });
+    if (error) throw new Error(error.message);
+
+    if (!due || !due.length) return res.json({ ok: true, reminded: 0, note: 'nothing due' });
+
+    let sent = 0, failed = 0;
+    for (const s of due) {
+      const hoursAway = (new Date(s.scheduled_at) - now) / 3600000;
+
+      // Attendees recorded on the session, plus the coach.
+      const { data: atts } = await supabase.from('session_attendees')
+        .select('email, name').eq('session_id', s.id);
+      const { data: coach } = await supabase.from('coaches')
+        .select('email, first_name').eq('id', s.coach_id).maybeSingle();
+
+      const targets = [
+        ...(atts || []).map(a => ({ to: a.email, name: a.name, isCoach: false })),
+        ...(coach && coach.email ? [{ to: coach.email, name: coach.first_name, isCoach: true }] : []),
+      ].filter(t => t.to);
+
+      let anySent = false;
+      for (const t of targets) {
+        try {
+          await sendSessionReminder({ ...t, session: s, meetLink: s.meet_link, hoursAway });
+          anySent = true; sent++;
+        } catch (e) {
+          failed++;
+          console.error('[cron/session-reminders]', s.id, t.to, e.message);
+        }
+      }
+
+      // Only mark done if at least one went out, so a total failure retries next hour
+      // instead of silently swallowing the whole session's notification.
+      if (anySent) {
+        await supabase.from('sessions')
+          .update({ reminder_sent_at: new Date().toISOString() }).eq('id', s.id);
+      }
+    }
+
+    return res.json({ ok: failed === 0, sessions: due.length, emails_sent: sent, failed });
+  } catch (err) {
+    console.error('[cron/session-reminders]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/coach-digest', requireCron, async (req, res) => {
   try {
     const now   = new Date();
