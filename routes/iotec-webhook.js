@@ -297,19 +297,20 @@ module.exports = async (req, res) => {
   }
 
   if (reg) {
-    await supabase.from('payment_events').insert({
+    // Order matters here: event → settle → issue documents → email. The
+    // confirmation email attaches the numbered receipt, so the receipt has to
+    // exist before it is sent. It previously went out first, which is why no
+    // real payment ever produced an attachment.
+    const { data: evt, error: evtErr } = await supabase.from('payment_events').insert({
       registration_id: payReq.registration_id,
       payment_type:    payReq.payment_type,
       amount:          payReq.amount,
       method:          payReq.method || 'mobile_money',
       reference:       refId,
       note:            `ioTec callback — ${tx.status} (verified)`,
-    });
-    try { await sendPaymentConfirmation(reg, reg.cohorts, payReq.payment_type); }
-    catch (emailErr) { console.error('[iotec-webhook] Confirmation email failed:', emailErr.message); }
-    // Finance record copy for accounting (record-keeping until QuickBooks Online is connected).
-    try { await sendFinancePaymentRecord(reg, reg.cohorts, payReq.payment_type, { method: payReq.method, reference: refId }); }
-    catch (finErr) { console.error('[iotec-webhook] Finance record email failed:', finErr.message); }
+    }).select('id').single();
+    if (evtErr) console.error('[iotec-webhook] payment event insert failed:', evtErr.message);
+
     // Settle the collected payment → platform cut + coach earnings (WHT, capital recoupment, cash).
     // Idempotent per (registration, payment_type); runs as service_role so the RPC's admin/finance
     // gate is bypassed for the webhook. Never blocks crediting — failures are logged for reconcile.
@@ -319,7 +320,23 @@ module.exports = async (req, res) => {
       const { error: setErr } = await supabase.rpc('settle_registration_payment', { p_reg_id: payReq.registration_id, p_payment_type: payReq.payment_type });
       if (setErr) console.error('[iotec-webhook] settlement failed (will retry via reconcile):', setErr.message);
     } catch (thrown) { console.error('[iotec-webhook] settlement threw (will retry via reconcile):', thrown.message); }
-    console.log(`[iotec-webhook] ✓ ${payReq.payment_type} marked paid for registration#${payReq.registration_id}`);
+
+    // Mint the numbered invoice (first payment) + receipt (every payment).
+    // Idempotent per payment event; the reconcile cron repairs any failure here.
+    let docs = null;
+    try {
+      const { data, error: docErr } = await supabase.rpc('issue_payment_documents', { p_payment_event_id: evt && evt.id });
+      if (docErr) console.error('[iotec-webhook] document issue failed (will retry via reconcile):', docErr.message);
+      else docs = data;
+    } catch (thrown) { console.error('[iotec-webhook] document issue threw (will retry via reconcile):', thrown.message); }
+
+    try { await sendPaymentConfirmation(reg, reg.cohorts, payReq.payment_type); }
+    catch (emailErr) { console.error('[iotec-webhook] Confirmation email failed:', emailErr.message); }
+    // Finance record copy for accounting.
+    try { await sendFinancePaymentRecord(reg, reg.cohorts, payReq.payment_type, { method: payReq.method, reference: refId, receipt: docs && docs.receipt }); }
+    catch (finErr) { console.error('[iotec-webhook] Finance record email failed:', finErr.message); }
+    console.log(`[iotec-webhook] ✓ ${payReq.payment_type} marked paid for registration#${payReq.registration_id}`
+      + (docs && docs.receipt ? ` (receipt ${docs.receipt})` : ''));
   } else {
     console.log(`[iotec-webhook] pr#${payReq.id} success but registration already paid (reconcile beat us) — ok`);
   }

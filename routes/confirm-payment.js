@@ -62,15 +62,17 @@ module.exports = async (req, res) => {
 
   if (updateErr) return res.status(500).json({ error: 'Failed to update payment status' });
 
-  // Log payment event
-  await supabase.from('payment_events').insert({
+  // Log payment event. The id is captured because the numbered receipt is keyed
+  // to it — one receipt per payment, and that link is what makes re-issuing safe.
+  const { data: evt, error: evtErr } = await supabase.from('payment_events').insert({
     registration_id: registrationId,
     payment_type:    paymentType,
     amount,
     method:          method || null,
     reference:       reference || null,
     note:            note || null,
-  });
+  }).select('id').single();
+  if (evtErr) console.error('[confirm-payment] payment event insert failed:', evtErr.message);
 
   // Book the settlement (80/20 split + coach earnings).
   // The ioTec webhook does this for online payments; without it here, an offline
@@ -94,6 +96,21 @@ module.exports = async (req, res) => {
   // Don't fail the request — the payment IS confirmed; settlement can be re-run.
   // `settled` is surfaced in the response so the dashboard can warn finance.
 
+  // Mint the numbered invoice (first payment only) and the receipt (every payment).
+  // Must run BEFORE the confirmation email, which looks for the receipt to attach.
+  // Idempotent per payment event, so a retry can't burn a second number.
+  // supabase.rpc() RESOLVES with { error } — check it; a bare catch swallows it.
+  let docs = null;
+  try {
+    const { data, error: docErr } = await supabase.rpc('issue_payment_documents', {
+      p_payment_event_id: evt && evt.id,
+    });
+    if (docErr) console.error('[confirm-payment] document issue failed (reconcile will retry):', docErr.message);
+    else docs = data;
+  } catch (thrown) {
+    console.error('[confirm-payment] document issue threw (reconcile will retry):', thrown.message);
+  }
+
   // Send payment confirmation email
   try {
     await sendPaymentConfirmation(reg, reg.cohorts, paymentType);
@@ -105,7 +122,11 @@ module.exports = async (req, res) => {
   return res.status(200).json({
     ok: true,
     settled,
+    documents: docs,   // { invoice, receipt, bill_to_pending } — surfaced so the
+                       // Command Centre can show the number and flag a pending bill-to
     message: `${paymentType} marked as paid for registration #${registrationId}`
-      + (settled ? '' : ' — WARNING: settlement not booked, tell finance to re-run it'),
+      + (settled ? '' : ' — WARNING: settlement not booked, tell finance to re-run it')
+      + (docs && docs.receipt ? ` — receipt ${docs.receipt}` : '')
+      + (docs && docs.bill_to_pending ? ' (bill-to incomplete: receipt withheld from the founder)' : ''),
   });
 };

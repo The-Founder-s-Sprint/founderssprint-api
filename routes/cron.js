@@ -111,6 +111,15 @@ router.get('/auto-move', requireCron, async (req, res) => {
       const delinquent = await getDepositPaidUnpaidBalance(cohort.id);
       for (const reg of delinquent) {
         if (reg.balance_grace_token) continue;               // already in grace
+        // Honour the REGISTRATION's own deadline, not just the cohort start date.
+        // balance_due_at is normally (cohort start 10:00 EAT − 48h), but it can be
+        // extended by agreement — and when it is, opening a grace window early tells
+        // a founder they've missed a deadline they haven't, and frees their seat.
+        // This bit Tomide (reg 64): deadline extended to 30 Sep, grace opened 5 Sep.
+        if (reg.balance_due_at && new Date(reg.balance_due_at) > new Date()) {
+          log.push(`reg ${reg.id} skipped — balance not due until ${reg.balance_due_at}`);
+          continue;
+        }
         const grace = await enterBalanceGrace(reg);          // frees seat, sets token + 7-day deadline
         if (!grace) continue;
         const next      = await getNextOpenCohortByDate(cohort);
@@ -128,6 +137,9 @@ router.get('/auto-move', requireCron, async (req, res) => {
       .not('balance_grace_token', 'is', null)
       .is('balance_choice', null)
       .lt('balance_grace_deadline', nowIso)
+      // Never roll or forfeit someone who has since PAID. A stale grace token must
+      // not outrank the fact that the money arrived.
+      .eq('balance_paid', false)
       .eq('forfeited', false);
     if (error) throw error;
     for (const reg of (expired || [])) {
@@ -277,12 +289,27 @@ router.get('/reconcile', requireCron, async (req, res) => {
           .select('*, cohorts!registrations_cohort_id_fkey(*)').maybeSingle();
         if (rErr) { log.push(`reg update failed pr#${pr.id}: ${rErr.message}`); continue; }
         if (reg) {
-          await supabase.from('payment_events').insert({ registration_id: pr.registration_id,
+          const { data: evt } = await supabase.from('payment_events').insert({ registration_id: pr.registration_id,
             payment_type: pr.payment_type, amount: pr.amount, method: pr.method || 'mobile_money',
-            reference: pr.transaction_id, note: 'ioTec reconciliation (missed webhook)' });
+            reference: pr.transaction_id, note: 'ioTec reconciliation (missed webhook)' })
+            .select('id').single();
+          // Settle, then issue the numbered documents, then email — the
+          // confirmation attaches the receipt, so it has to exist first.
+          try {
+            const { error: sErr } = await supabase.rpc('settle_registration_payment',
+              { p_reg_id: pr.registration_id, p_payment_type: pr.payment_type });
+            if (sErr) log.push(`settlement failed reg#${pr.registration_id}: ${sErr.message}`);
+          } catch (e) { log.push(`settlement threw reg#${pr.registration_id}: ${e.message}`); }
+          let docs = null;
+          try {
+            const { data, error: dErr } = await supabase.rpc('issue_payment_documents', { p_payment_event_id: evt && evt.id });
+            if (dErr) log.push(`document issue failed reg#${pr.registration_id}: ${dErr.message}`);
+            else docs = data;
+          } catch (e) { log.push(`document issue threw reg#${pr.registration_id}: ${e.message}`); }
           try { await sendPaymentConfirmation(reg, reg.cohorts, pr.payment_type); } catch (_) {}
-          try { await sendFinancePaymentRecord(reg, reg.cohorts, pr.payment_type, { method: pr.method, reference: pr.transaction_id }); } catch (_) {}
-          log.push(`reconciled ${pr.payment_type} paid → reg#${pr.registration_id}`);
+          try { await sendFinancePaymentRecord(reg, reg.cohorts, pr.payment_type, { method: pr.method, reference: pr.transaction_id, receipt: docs && docs.receipt }); } catch (_) {}
+          log.push(`reconciled ${pr.payment_type} paid → reg#${pr.registration_id}`
+            + (docs && docs.receipt ? ` (${docs.receipt})` : ''));
         } else {
           log.push(`pr#${pr.id} success but already marked (webhook beat us) — ok`);
         }
@@ -290,6 +317,23 @@ router.get('/reconcile', requireCron, async (req, res) => {
         log.push(`pr#${pr.id} reconciled as ${internal}`);
       }
     }
+
+    // 1b) Repair pass: any payment that never got its numbered documents.
+    // This is the safety net behind all three payment paths — if the RPC failed
+    // at payment time (DB hiccup, deploy mid-flight), the money is still credited
+    // and the document is minted here on the next tick. Idempotent per event, so
+    // it can only ever fill gaps, never duplicate. Anti-join runs in the DB.
+    try {
+      const { data: unissued, error: uErr } = await supabase.rpc('unissued_payment_events', { p_limit: 100 });
+      if (uErr) log.push(`unissued lookup failed: ${uErr.message}`);
+      else for (const e of (unissued || [])) {
+        const { data: d, error: dErr } = await supabase.rpc('issue_payment_documents', { p_payment_event_id: e.payment_event_id });
+        // Log document numbers and ids only — never names or emails.
+        if (dErr) log.push(`document issue failed event#${e.payment_event_id}: ${dErr.message}`);
+        else log.push(`issued ${d && d.receipt} for event#${e.payment_event_id} (reg#${e.registration_id})`
+          + (d && d.bill_to_pending ? ' — bill-to incomplete, withheld from founder' : ''));
+      }
+    } catch (e) { log.push(`document repair pass threw: ${e.message}`); }
 
     // 2) Forfeit registrations past the balance deadline (deposit kept, seat released)
     const { data: lapsed, error: lErr } = await supabase
