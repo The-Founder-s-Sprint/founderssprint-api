@@ -106,9 +106,13 @@ router.post('/generate', requireStaff, async (req, res) => {
 
   // Attendees = the cohort's paid, un-forfeited founders.
   const { data: regs } = await supabase.from('registrations')
-    .select('email, first_name, last_name, deposit_paid, forfeited')
+    .select('email, first_name, last_name, user_id, deposit_paid, forfeited')
     .eq('cohort_id', cohortId).eq('deposit_paid', true).eq('forfeited', false);
-  const founders = (regs || []).map(r => ({ email: r.email, name: [r.first_name, r.last_name].filter(Boolean).join(' ') }));
+  const founders = (regs || []).map(r => ({
+    email:   r.email,
+    name:    [r.first_name, r.last_name].filter(Boolean).join(' '),
+    user_id: r.user_id || null,
+  }));
 
   if (!founders.length) {
     return res.status(400).json({ error: 'No paid founders on this cohort — nobody to invite' });
@@ -186,8 +190,17 @@ router.post('/generate', requireStaff, async (req, res) => {
         throw new Error(sErr.message);
       }
 
+      // user_id matters as much as the email: coach_covers_founder joins attendees
+      // to founder_profiles on it, so an attendee row without one makes the founder
+      // invisible to every coach — no My Founders entry, no assessment, no intake.
+      // (That is exactly what happened to Cohort 1's first founder.)
       await supabase.from('session_attendees')
-        .insert(founders.map(f => ({ session_id: sess.id, email: f.email, name: f.name || null })));
+        .insert(founders.map(f => ({
+          session_id: sess.id,
+          email:      f.email,
+          name:       f.name || null,
+          user_id:    f.user_id || null,
+        })));
 
       created.push({ title: p.title, at: p.starts_at_eat, meet_link: meet.meetLink });
     } catch (e) {
