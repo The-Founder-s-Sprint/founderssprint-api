@@ -53,6 +53,7 @@ router.post('/schedule', requireAuth, async (req, res) => {
     let meetLink = null;
     let calendarEventId = null;
     let htmlLink = null;
+    let organiserEmail = null;
 
     try {
       const result = await createMeetSession({
@@ -67,6 +68,7 @@ router.post('/schedule', requireAuth, async (req, res) => {
       meetLink = result.meetLink;
       calendarEventId = result.calendarEventId;
       htmlLink = result.htmlLink;
+      organiserEmail = result.organiserEmail;
       console.log(`[Sessions] Meet link created: ${meetLink}`);
     } catch (calErr) {
       console.error('[Sessions] Google Calendar error:', calErr.message);
@@ -86,6 +88,7 @@ router.post('/schedule', requireAuth, async (req, res) => {
         duration_minutes,
         meet_link: meetLink,
         calendar_event_id: calendarEventId,
+        organiser_email: organiserEmail,
         status: 'scheduled',
         cohort_id,
       })
@@ -175,13 +178,13 @@ router.patch('/:id', requireAuth, async (req, res) => {
     if (status === 'cancelled') {
       const { data: session } = await supabase
         .from('sessions')
-        .select('calendar_event_id')
+        .select('calendar_event_id, organiser_email')
         .eq('id', id)
         .single();
 
       if (session?.calendar_event_id) {
         try {
-          await cancelMeetSession(session.calendar_event_id);
+          await cancelMeetSession(session.calendar_event_id, session.organiser_email);
           console.log(`[Sessions] Cancelled calendar event for session #${id}`);
         } catch (calErr) {
           console.error('[Sessions] Failed to cancel calendar event:', calErr.message);

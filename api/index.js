@@ -31,7 +31,6 @@ const mentorApplyPhotoRoutes     = require('../routes/mentor-apply-photo');
 const directoryApplicationRoutes = require('../routes/directory-application');
 const investorApplicationRoutes  = require('../routes/investor-application');
 const graceRoutes                = require('../routes/grace');
-const expressRoutes              = require('../routes/express');
 const corporateRoutes            = require('../routes/corporate');
 
 const app = express();
@@ -141,7 +140,6 @@ app.use('/api/mentor-apply-photo',    strictLimiter);
 app.use('/api/directory-application', strictLimiter);
 app.use('/api/investor-application',  strictLimiter);
 app.use('/api/grace',                 strictLimiter);
-app.use('/api/express',               strictLimiter);
 
 // Directory renewal (payment-gated). Charge endpoint behind the payment limiter; the
 // renew router is mounted BEFORE directory-lifecycle so its /directory/renew wins.
@@ -164,7 +162,6 @@ app.post('/api/mentor-apply-photo',    mentorApplyPhotoRoutes);
 app.post('/api/directory-application', directoryApplicationRoutes);
 app.post('/api/investor-application',  investorApplicationRoutes);
 app.use('/api/grace',                  graceRoutes);
-app.use('/api/express',                expressRoutes);
 app.use('/api/corporate',              corporateRoutes);
 app.use('/api/materials',         materialsRoutes);
 app.use('/api',                   coachApplicationRoutes);

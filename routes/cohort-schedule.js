@@ -179,13 +179,14 @@ router.post('/generate', requireStaff, async (req, res) => {
         description: `${LABELS[p.discipline] || p.discipline} · Week ${p.week}`,
         scheduled_at: new Date(p.starts_at_eat).toISOString(),
         duration_minutes: p.duration_minutes, meet_link: meet.meetLink,
-        calendar_event_id: meet.calendarEventId, status: 'scheduled', cohort_id: cohortId,
+        calendar_event_id: meet.calendarEventId, organiser_email: meet.organiserEmail,
+        status: 'scheduled', cohort_id: cohortId,
       }).select().single();
       if (sErr) {
         // The Google event already exists at this point. Without this rollback a DB
         // failure silently orphans it on the delegate calendar — and because the
         // skip-check reads the sessions table, a re-run would create ANOTHER copy.
-        try { await cancelMeetSession(meet.calendarEventId); }
+        try { await cancelMeetSession(meet.calendarEventId, meet.organiserEmail); }
         catch (delErr) { console.error('[cohort-schedule] orphan cleanup failed for', meet.calendarEventId, delErr.message); }
         throw new Error(sErr.message);
       }
