@@ -630,4 +630,86 @@ router.get('/coach-digest', requireCron, async (req, res) => {
   }
 });
 
+// ── GET /api/cron/session-attendance ─────────────────────────────────────────
+// Reads Google Meet conference records for sessions that have finished and
+// records who joined. This is the evidence a session was DELIVERED — not that a
+// founder completed the material, which stays the coach's judgement on the L3.
+//
+// Runs after sessions end (hourly is plenty). Only touches rows the coach hasn't
+// already marked: a human who was in the call outranks an API guessing from a
+// display name.
+//
+// Unmatched participants are REPORTED, never guessed onto a founder. A wrong
+// attendance record is worse than a missing one, because it becomes evidence of
+// a delivery that may not have happened.
+router.get('/session-attendance', requireCron, async (req, res) => {
+  const log = [], unmatched = [];
+  const hours = Number(req.query.hours) || 48;
+  const since = new Date(Date.now() - hours * 3600 * 1000);
+
+  try {
+    const { attendanceForMeeting, matchToRoster } = require('../lib/google-meet');
+
+    // Finished, not cancelled, has a Meet link. Bounded window so this can't
+    // walk the whole table as the cohort count grows.
+    const { data: due, error } = await supabase
+      .from('sessions')
+      .select('id, title, scheduled_at, duration_minutes, meet_link, organiser_email, status')
+      .eq('status', 'scheduled')
+      .not('meet_link', 'is', null)
+      .gte('scheduled_at', since.toISOString())
+      .lt('scheduled_at', new Date().toISOString())
+      .order('scheduled_at', { ascending: true })
+      .limit(100);
+    if (error) throw new Error(error.message);
+    if (!due || !due.length) return res.json({ ok: true, checked: 0, note: 'no finished sessions in window' });
+
+    for (const s of due) {
+      // Give the conference time to close before reading it.
+      const endsAt = new Date(s.scheduled_at).getTime() + (s.duration_minutes || 120) * 60000;
+      if (Date.now() < endsAt + 10 * 60000) { log.push(`session ${s.id} still running — skipped`); continue; }
+
+      const { data: roster } = await supabase.from('session_attendees')
+        .select('email, name, attended, attendance_source').eq('session_id', s.id);
+      if (!roster || !roster.length) { log.push(`session ${s.id} has no roster — skipped`); continue; }
+
+      let result;
+      try {
+        result = await attendanceForMeeting(s.meet_link, s.organiser_email, s.scheduled_at);
+      } catch (e) {
+        log.push(`session ${s.id} Meet read failed: ${e.message}`);
+        continue;
+      }
+      if (!result.participants.length) { log.push(`session ${s.id} — no participants recorded`); continue; }
+
+      for (const p of result.participants) {
+        const hit = matchToRoster(p.displayName, roster);
+        if (!hit) {
+          // Someone in the call we can't place. Worth a human's eyes, not a guess.
+          unmatched.push({ session_id: s.id, displayName: p.displayName, kind: p.kind, minutes: p.minutes });
+          continue;
+        }
+        // A coach who marked this already was in the room — don't overwrite them.
+        if (hit.attendance_source === 'coach' || hit.attendance_source === 'admin') continue;
+
+        const { data: r, error: rErr } = await supabase.rpc('record_session_attendance', {
+          p_session_id: s.id, p_email: hit.email, p_attended: true,
+          p_minutes: p.minutes, p_first_joined: p.firstJoined, p_last_left: p.lastLeft,
+          p_join_count: p.joinCount, p_source: 'meet_api',
+        });
+        // supabase.rpc() RESOLVES with { error } — check it, don't rely on catch.
+        if (rErr) log.push(`session ${s.id} ${hit.email}: ${rErr.message}`);
+        else if (r && r.ok === false) log.push(`session ${s.id} ${hit.email}: ${r.reason}`);
+        else log.push(`session ${s.id}: ${hit.email} joined${p.minutes ? ` (${p.minutes}m)` : ''}`);
+      }
+    }
+
+    console.log('[Cron/session-attendance]', { actions: log.length, unmatched: unmatched.length });
+    return res.json({ ok: true, checked: due.length, actions: log, unmatched });
+  } catch (err) {
+    console.error('[Cron/session-attendance]', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
