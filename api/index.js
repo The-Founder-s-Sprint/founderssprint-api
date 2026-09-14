@@ -22,6 +22,7 @@ const rsvpRoutes              = require('../routes/rsvp');
 const directoryLifecycleRoutes = require('../routes/directory-lifecycle');
 const directoryRenewRoutes     = require('../routes/directory-renew');
 const staffRoutes              = require('../routes/staff');
+const assignmentRoutes         = require('../routes/assignments');
 const testimonialRoutes        = require('../routes/testimonial');
 const mentorRecommendationRoutes = require('../routes/mentor-recommendation');
 const mentorChargeRoutes         = require('../routes/mentor-charge');
@@ -179,6 +180,16 @@ const staffLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later.' },
 });
 app.use('/api/staff',             staffLimiter, staffRoutes);
+
+// Assignment notifications. Authenticated, and the route proves the caller is a
+// party to the assignment before it will reveal anyone's email. Rate-limited
+// because a cohort-wide assign fans out to one send per founder.
+const assignmentLimiter = rateLimit({
+  windowMs: 60 * 1000, max: 30,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+app.use('/api/assignments',       assignmentLimiter, assignmentRoutes);
 
 // Mentor post-approval payment (admin/finance only; validates JWT + role inside).
 app.post('/api/mentor/charge',    staffLimiter, mentorChargeRoutes.requireStaffPay, mentorChargeRoutes.charge);

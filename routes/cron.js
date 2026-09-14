@@ -712,4 +712,71 @@ router.get('/session-attendance', requireCron, async (req, res) => {
   }
 });
 
+// ── GET /api/cron/assignment-digest ──────────────────────────────────────────
+// Daily. Two nudges, both deliberately quiet:
+//   · a founder with work due inside 48h that they haven't submitted
+//   · a coach with submissions sitting unreviewed
+//
+// Only ONE mail per person per run, however many items they have — a digest that
+// arrives per-row trains people to filter it, which defeats the whole point of
+// moving the conversation onto the platform.
+router.get('/assignment-digest', requireCron, async (req, res) => {
+  const log = [];
+  try {
+    const { sendAssignmentDigest } = require('../lib/emailer');
+    const horizon = new Date(Date.now() + (Number(req.query.hours) || 48) * 3600 * 1000);
+
+    const { data: rows, error } = await supabase
+      .from('assignment_recipients')
+      .select('id, status, founder_id, '
+            + 'assignments!inner(id, title, due_at, coach_id, status), '
+            + 'founder_profiles(first_name, email)')
+      .in('status', ['assigned', 'returned', 'submitted'])
+      .limit(2000);
+    if (error) throw new Error(error.message);
+
+    const dueByFounder = new Map();   // email -> { firstName, items[] }
+    const reviewByCoach = new Map();  // coach_id -> count
+
+    for (const r of (rows || [])) {
+      const a = r.assignments || {};
+      if (a.status === 'closed') continue;
+
+      if (r.status === 'submitted') {
+        reviewByCoach.set(a.coach_id, (reviewByCoach.get(a.coach_id) || 0) + 1);
+        continue;
+      }
+      // Undated work never becomes urgent, so it never nudges — otherwise the
+      // digest would repeat the same item every morning forever.
+      if (!a.due_at || new Date(a.due_at) > horizon) continue;
+
+      const fp = r.founder_profiles;
+      if (!fp || !fp.email) continue;
+      const key = fp.email.toLowerCase();
+      if (!dueByFounder.has(key)) dueByFounder.set(key, { firstName: fp.first_name || '', items: [] });
+      dueByFounder.get(key).items.push({ title: a.title, dueAt: a.due_at, overdue: new Date(a.due_at) < new Date() });
+    }
+
+    let sent = 0;
+    for (const [email, v] of dueByFounder) {
+      try { await sendAssignmentDigest({ to: email, forRole: 'founder', firstName: v.firstName, items: v.items }); sent++; }
+      catch (e) { log.push(`founder ${email}: ${e.message}`); }
+    }
+    for (const [coachId, count] of reviewByCoach) {
+      const { data: c } = await supabase.from('coaches')
+        .select('first_name, email, founderssprint_email').eq('user_id', coachId).limit(1).maybeSingle();
+      const to = c && (c.founderssprint_email || c.email);
+      if (!to) { log.push(`coach ${coachId}: no email`); continue; }
+      try { await sendAssignmentDigest({ to, forRole: 'coach', firstName: c.first_name || '', pendingReviews: count }); sent++; }
+      catch (e) { log.push(`coach ${to}: ${e.message}`); }
+    }
+
+    console.log('[Cron/assignment-digest]', { sent, problems: log.length });
+    return res.json({ ok: true, sent, founders: dueByFounder.size, coaches: reviewByCoach.size, problems: log });
+  } catch (err) {
+    console.error('[Cron/assignment-digest]', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
