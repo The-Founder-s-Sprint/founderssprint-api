@@ -712,6 +712,46 @@ router.get('/session-attendance', requireCron, async (req, res) => {
   }
 });
 
+// ── GET /api/cron/seat-founders ──────────────────────────────────────────────
+// Repair pass for cohort seating. Payment-time seating can fail — Google down,
+// a founder who paid before the schedule was generated, a registration claimed
+// by a login only later. Every one of those failures is SILENT: the founder
+// simply never gets an invite and nobody finds out until the class starts.
+//
+// Idempotent per registration, so running it hourly costs nothing when there is
+// nothing to do.
+router.get('/seat-founders', requireCron, async (req, res) => {
+  try {
+    const { seatFounderForRegistration } = require('../lib/cohort-seating');
+    const dryRun = req.query.dry === '1';
+
+    // Paid cohort seats whose cohort still has sessions ahead of it.
+    const { data: regs, error } = await supabase
+      .from('registrations')
+      .select('id, email, cohort_id')
+      .eq('track', 'cohort')
+      .eq('deposit_paid', true)
+      .or('forfeited.is.null,forfeited.eq.false')
+      .not('cohort_id', 'is', null)
+      .limit(500);
+    if (error) throw new Error(error.message);
+
+    const results = [];
+    for (const r of (regs || [])) {
+      const out = await seatFounderForRegistration(r.id, { dryRun });
+      // Only report registrations where something actually happened or broke —
+      // a green run should be quiet, or nobody will read the log.
+      if (out.seated || out.problems.length) results.push(out);
+    }
+    const seated = results.reduce((n, r) => n + r.seated, 0);
+    console.log('[Cron/seat-founders]', { checked: (regs || []).length, seated, flagged: results.length });
+    return res.json({ ok: true, dry_run: dryRun, checked: (regs || []).length, seated, results });
+  } catch (err) {
+    console.error('[Cron/seat-founders]', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /api/cron/assignment-digest ──────────────────────────────────────────
 // Daily. Two nudges, both deliberately quiet:
 //   · a founder with work due inside 48h that they haven't submitted

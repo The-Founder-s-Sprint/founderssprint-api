@@ -119,6 +119,16 @@ module.exports = async (req, res) => {
     // Don't fail the request — payment is confirmed, email is secondary
   }
 
+
+  // Seat them in the cohort's future sessions. Idempotent, and deliberately
+  // last: a calendar hiccup must never fail a confirmed payment. The cron
+  // repair pass catches anything that fails here.
+  try {
+    const { seatFounderForRegistration } = require('../lib/cohort-seating');
+    const seat = await seatFounderForRegistration(reg.id);
+    if (seat.seated || seat.problems.length) console.log('[confirm-payment] seating', seat);
+  } catch (seatErr) { console.error('[confirm-payment] seating threw:', seatErr.message); }
+
   return res.status(200).json({
     ok: true,
     settled,

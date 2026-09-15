@@ -335,6 +335,16 @@ module.exports = async (req, res) => {
     // Finance record copy for accounting.
     try { await sendFinancePaymentRecord(reg, reg.cohorts, payReq.payment_type, { method: payReq.method, reference: refId, receipt: docs && docs.receipt }); }
     catch (finErr) { console.error('[iotec-webhook] Finance record email failed:', finErr.message); }
+
+    // Seat them in the cohort's future sessions. Idempotent, and deliberately
+    // last: a calendar hiccup must never fail a confirmed payment. The cron
+    // repair pass catches anything that fails here.
+    try {
+      const { seatFounderForRegistration } = require('../lib/cohort-seating');
+      const seat = await seatFounderForRegistration(payReq.registration_id);
+      if (seat.seated || seat.problems.length) console.log('[iotec-webhook] seating', seat);
+    } catch (seatErr) { console.error('[iotec-webhook] seating threw:', seatErr.message); }
+
     console.log(`[iotec-webhook] ✓ ${payReq.payment_type} marked paid for registration#${payReq.registration_id}`
       + (docs && docs.receipt ? ` (receipt ${docs.receipt})` : ''));
   } else {
