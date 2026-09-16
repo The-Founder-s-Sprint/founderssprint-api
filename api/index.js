@@ -23,6 +23,7 @@ const directoryLifecycleRoutes = require('../routes/directory-lifecycle');
 const directoryRenewRoutes     = require('../routes/directory-renew');
 const staffRoutes              = require('../routes/staff');
 const assignmentRoutes         = require('../routes/assignments');
+const enrollmentRoutes         = require('../routes/enrollment');
 const testimonialRoutes        = require('../routes/testimonial');
 const mentorRecommendationRoutes = require('../routes/mentor-recommendation');
 const mentorChargeRoutes         = require('../routes/mentor-charge');
@@ -190,6 +191,10 @@ const assignmentLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later.' },
 });
 app.use('/api/assignments',       assignmentLimiter, assignmentRoutes);
+
+// Deferrals and cancellations. Staff-only, validated inside the route, and the
+// decision RPC re-checks the role as the acting user — the endpoint cannot widen it.
+app.use('/api/enrollment',        staffLimiter, enrollmentRoutes);
 
 // Mentor post-approval payment (admin/finance only; validates JWT + role inside).
 app.post('/api/mentor/charge',    staffLimiter, mentorChargeRoutes.requireStaffPay, mentorChargeRoutes.charge);
