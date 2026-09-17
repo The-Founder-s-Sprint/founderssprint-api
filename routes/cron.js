@@ -712,6 +712,91 @@ router.get('/session-attendance', requireCron, async (req, res) => {
   }
 });
 
+// ── GET /api/cron/verify-meet-links ──────────────────────────────────────────
+// Reads every upcoming session's event back from Google and compares it with
+// what we stored. We write meet_link once at creation and never look again, so
+// any edit made in the Google UI — a manual reschedule, a delete-and-recreate —
+// silently forks our copy from the room that actually exists. The symptom is a
+// coach and a founder sitting in two different empty calls.
+//
+// Reports by default. Pass ?fix=1 to write Google's link back into sessions:
+// Google owns the room, we only hold a pointer to it, so on a disagreement the
+// calendar is right and we are stale.
+//
+// Also checks the guest list, since a link that matches is no use if the
+// founder was never invited to the event carrying it.
+router.get('/verify-meet-links', requireCron, async (req, res) => {
+  try {
+    const { getEvent } = require('../lib/google-calendar');
+    const fix   = req.query.fix === '1';
+    const days  = Number(req.query.days) || 60;
+    const until = new Date(Date.now() + days * 86400000).toISOString();
+
+    const { data: sessions, error } = await supabase
+      .from('sessions')
+      .select('id, title, scheduled_at, meet_link, calendar_event_id, organiser_email, cohort_id, status')
+      .not('calendar_event_id', 'is', null)
+      .neq('status', 'cancelled')
+      .gt('scheduled_at', new Date().toISOString())
+      .lt('scheduled_at', until)
+      .order('scheduled_at')
+      .limit(300);
+    if (error) throw new Error(error.message);
+
+    const out = { checked: 0, ok: 0, mismatched: [], missing: [], uninvited: [], errors: [], fixed: 0 };
+
+    for (const s of (sessions || [])) {
+      out.checked++;
+      let ev;
+      try { ev = await getEvent(s.calendar_event_id, s.organiser_email); }
+      catch (e) { out.errors.push({ session: s.id, error: e.message }); continue; }
+
+      if (ev.missing || ev.status === 'cancelled') {
+        // The event our link points at is gone. Founders hold invites that lead
+        // nowhere; this needs a human, not an automatic re-create.
+        out.missing.push({ session: s.id, title: s.title, at: s.scheduled_at });
+        continue;
+      }
+
+      const stored = String(s.meet_link || '').trim().toLowerCase();
+      const live   = String(ev.meetLink || '').trim().toLowerCase();
+
+      if (live && stored !== live) {
+        out.mismatched.push({
+          session: s.id, title: s.title, at: s.scheduled_at,
+          stored: s.meet_link, google: ev.meetLink, organiser: ev.organiser,
+        });
+        if (fix) {
+          const { error: uErr } = await supabase.from('sessions')
+            .update({ meet_link: ev.meetLink }).eq('id', s.id);
+          if (uErr) out.errors.push({ session: s.id, error: 'update failed: ' + uErr.message });
+          else out.fixed++;
+        }
+      } else if (live) {
+        out.ok++;
+      }
+
+      // Everyone we think is attending should be on the Google guest list.
+      const { data: roster } = await supabase
+        .from('session_attendees').select('email').eq('session_id', s.id);
+      const invited = new Set(ev.attendees || []);
+      const absent = (roster || [])
+        .map(r => String(r.email || '').trim().toLowerCase())
+        .filter(e => e && !invited.has(e));
+      if (absent.length) out.uninvited.push({ session: s.id, title: s.title, emails: absent });
+    }
+
+    console.log('[Cron/verify-meet-links]', {
+      checked: out.checked, ok: out.ok, mismatched: out.mismatched.length,
+      missing: out.missing.length, uninvited: out.uninvited.length, fixed: out.fixed,
+    });
+    return res.json({ ok: true, fix_applied: fix, ...out });
+  } catch (err) {
+    console.error('[Cron/verify-meet-links]', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /api/cron/seat-founders ──────────────────────────────────────────────
 // Repair pass for cohort seating. Payment-time seating can fail — Google down,
 // a founder who paid before the schedule was generated, a registration claimed
