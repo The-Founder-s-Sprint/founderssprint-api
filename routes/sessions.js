@@ -1,7 +1,7 @@
 const express = require('express');
 const router  = express.Router();
 const { supabase } = require('../lib/db');
-const { createMeetSession, cancelMeetSession } = require('../lib/google-calendar');
+const { createMeetSession, cancelMeetSession, patchEventTime } = require('../lib/google-calendar');
 
 // ── Auth middleware — accepts admin secret OR Bearer token ────────────────────
 async function requireAuth(req, res, next) {
@@ -20,6 +20,65 @@ async function requireAuth(req, res, next) {
   }
   return res.status(403).json({ error: 'Forbidden' });
 }
+
+// ── POST /api/sessions/reschedule — move a session in time ───────────────────
+// { session_id, starts_at, duration_minutes?, title?, notify? }
+//
+// Moves the Google event IN PLACE and updates our row to match. The event id,
+// the Meet room and the guest list all survive — only the time changes. This is
+// the function whose absence meant every schedule change had to be done by hand
+// in the Google UI, which is how a delete-and-recreate silently forks the link.
+//
+// The Meet link is read back from Google afterwards and re-saved, so even if the
+// room were reissued our copy stays true.
+router.post('/reschedule', requireAuth, async (req, res) => {
+  try {
+    const { session_id, starts_at, duration_minutes, title, notify } = req.body || {};
+    if (!session_id || !starts_at) {
+      return res.status(400).json({ error: 'session_id and starts_at required' });
+    }
+    const when = new Date(starts_at);
+    if (isNaN(when)) return res.status(400).json({ error: 'starts_at is not a valid date' });
+
+    const { data: s, error } = await supabase
+      .from('sessions')
+      .select('id, title, scheduled_at, duration_minutes, calendar_event_id, organiser_email, status, meet_link')
+      .eq('id', session_id).single();
+    if (error || !s) return res.status(404).json({ error: 'Session not found' });
+    if (s.status === 'cancelled') return res.status(409).json({ error: 'Session is cancelled' });
+
+    const mins = Number(duration_minutes) || s.duration_minutes || 120;
+    let google = null;
+    if (s.calendar_event_id) {
+      google = await patchEventTime(s.calendar_event_id, {
+        startTime: when.toISOString(),
+        durationMinutes: mins,
+        summary: title || null,
+        organiserEmail: s.organiser_email,
+        notify: notify || 'all',
+      });
+    }
+
+    const patch = { scheduled_at: when.toISOString(), duration_minutes: mins };
+    if (title) patch.title = title;
+    // Trust Google for the room: it owns it, we only point at it.
+    if (google && google.meetLink) patch.meet_link = google.meetLink;
+
+    const { error: uErr } = await supabase.from('sessions').update(patch).eq('id', session_id);
+    if (uErr) return res.status(500).json({ error: 'DB update failed: ' + uErr.message });
+
+    return res.json({
+      ok: true, session: session_id,
+      was: s.scheduled_at, now: when.toISOString(),
+      meet_link: (google && google.meetLink) || s.meet_link,
+      link_unchanged: !google || !google.meetLink || google.meetLink === s.meet_link,
+      calendar: google ? 'patched' : 'no calendar event on this session',
+    });
+  } catch (e) {
+    console.error('[Sessions/reschedule]', e);
+    return res.status(500).json({ error: e.message });
+  }
+});
 
 // ── POST /api/sessions/schedule — create a session with Google Meet ──────────
 router.post('/schedule', requireAuth, async (req, res) => {
