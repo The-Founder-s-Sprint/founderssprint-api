@@ -93,6 +93,62 @@ router.post('/generate', requireStaff, async (req, res) => {
                        : (Array.isArray(cohort.schedule) && cohort.schedule.length) ? 'cohort override'
                        : 'platform default';
 
+  // ── Deviation guard ────────────────────────────────────────────────────────
+  // Cohort 1 was generated with Thursday and Friday inverted against the locked
+  // weekday map. It sat in cohorts.schedule alongside a DELIBERATE exception
+  // (Barry's Wednesday evening), so nothing looked wrong, and nine days later a
+  // coach and a founder spent a morning in two different Meet rooms.
+  //
+  // The lesson is not "forbid deviation" — real cohorts need agreed exceptions.
+  // It is that a deviation must be SEEN and OWNED. So: diff against the locked
+  // map, spell out every difference in English, and refuse to commit unless the
+  // caller has explicitly accepted them. Dry runs always report and never block.
+  const deviations = [];
+  {
+    const DAYNAME = { 1:'Monday', 2:'Tuesday', 3:'Wednesday', 4:'Thursday', 5:'Friday' };
+    const locked  = Object.fromEntries(DEFAULT_DAYS.map(d => [d.weekday, d]));
+    const given   = Object.fromEntries((days || []).map(d => [Number(d.weekday), d]));
+
+    for (const wd of Object.keys(locked).map(Number)) {
+      const L = locked[wd], G = given[wd];
+      if (!G) { deviations.push(`${DAYNAME[wd]}: no session at all (locked map has ${L.label})`); continue; }
+      if (G.discipline !== L.discipline) {
+        deviations.push(
+          `${DAYNAME[wd]}: ${LABELS[G.discipline] || G.discipline} instead of ${L.label}`);
+      }
+      const t = G.time || '10:00';
+      if (t !== L.time) {
+        deviations.push(`${DAYNAME[wd]} ${LABELS[G.discipline] || G.discipline}: ${t} instead of ${L.time}`);
+      }
+    }
+    for (const wd of Object.keys(given).map(Number)) {
+      if (!locked[wd]) deviations.push(`Weekday ${wd}: not part of the locked map at all`);
+    }
+    // A discipline taught twice, or not at all, is always wrong — no cohort
+    // agreement makes sense of it, so this is a hard stop even on a dry run.
+    const counts = {};
+    (days || []).forEach(d => { counts[d.discipline] = (counts[d.discipline] || 0) + 1; });
+    const dupes   = Object.entries(counts).filter(([, n]) => n > 1).map(([k]) => k);
+    const missing = DEFAULT_DAYS.map(d => d.discipline).filter(k => !counts[k]);
+    if (dupes.length || missing.length) {
+      return res.status(400).json({
+        error: 'This schedule is not a valid week',
+        duplicated: dupes, missing,
+        hint: 'Every one of the five disciplines must appear exactly once.',
+      });
+    }
+  }
+
+  if (deviations.length && !dryRun && b.accept_deviations !== true) {
+    return res.status(409).json({
+      error: 'This schedule differs from the locked weekday map',
+      schedule_source: scheduleSource,
+      deviations,
+      hint: 'Check each line is intended. If they are agreed exceptions, re-send with '
+          + '"accept_deviations": true. If not, fix cohorts.schedule (or the days you sent) first.',
+    });
+  }
+
   // Coach per discipline, resolved from data (is_lead), never hardcoded.
   const { data: topics } = await supabase.from('coach_topics')
     .select('coach_id, discipline_key, is_lead').eq('is_lead', true);
@@ -152,6 +208,7 @@ router.post('/generate', requireStaff, async (req, res) => {
   if (dryRun) {
     return res.json({
       dry_run: true, cohort: cohort.name, weeks, schedule_source: scheduleSource,
+      deviations,   // always surfaced on a dry run, even when they are agreed
       founders: founders.map(f => f.email),
       to_create: plan.filter(p => !p.skip).length,
       already_scheduled: plan.filter(p => p.skip).length,
